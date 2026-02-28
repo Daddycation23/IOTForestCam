@@ -12,11 +12,11 @@
  *   - Deep-Sleep Friendly: All state is re-initialised on wake;
  *     no persistent RAM required.
  *
- * Hardware Wiring (ESP32-S3 ↔ MicroSD via SPI):
+ * Hardware Wiring (LILYGO T3-S3 V1.2 ↔ MicroSD via SPI):
  *   MOSI → GPIO 11
- *   MISO → GPIO 13
- *   CLK  → GPIO 12
- *   CS   → GPIO 10   (configurable via VSENSOR_SD_CS)
+ *   MISO → GPIO 2
+ *   CLK  → GPIO 14
+ *   CS   → GPIO 13
  *
  * SD Card Layout:
  *   /images/
@@ -35,9 +35,21 @@
 #include <SD.h>
 #include <SPI.h>
 
-// ──────────────────────── Pin Defaults ────────────────────────
+// ──────────────────────── Pin Defaults (LILYGO T3-S3 V1.2) ────
+#ifndef VSENSOR_SD_CLK
+#define VSENSOR_SD_CLK  14      // SPI Clock (SCK)
+#endif
+
+#ifndef VSENSOR_SD_MISO
+#define VSENSOR_SD_MISO 2       // SPI MISO
+#endif
+
+#ifndef VSENSOR_SD_MOSI
+#define VSENSOR_SD_MOSI 11      // SPI MOSI
+#endif
+
 #ifndef VSENSOR_SD_CS
-#define VSENSOR_SD_CS   10      // Chip-Select for MicroSD module
+#define VSENSOR_SD_CS   13      // Chip-Select for MicroSD module
 #endif
 
 #ifndef VSENSOR_SPI_FREQ

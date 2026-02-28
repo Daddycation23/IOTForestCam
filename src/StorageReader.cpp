@@ -31,19 +31,27 @@ StorageReader::StorageReader()
 // Lifecycle
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+// Use HSPI bus for SD card on T3-S3 V1.2
+static SPIClass sdSPI(HSPI);
+
 bool StorageReader::begin() {
     if (_mounted) {
         log_w("%s: SD already mounted", TAG);
         return true;
     }
 
-    // Initialise SPI bus on the default FSPI pins for ESP32-S3:
-    //   MOSI=11, MISO=13, SCK=12
-    SPI.begin(12, 13, 11, VSENSOR_SD_CS);
+    // Set CS pin high before init
+    pinMode(VSENSOR_SD_CS, OUTPUT);
+    digitalWrite(VSENSOR_SD_CS, HIGH);
+    delay(100);
 
-    if (!SD.begin(VSENSOR_SD_CS, SPI, VSENSOR_SPI_FREQ)) {
+    // Initialise HSPI bus for LILYGO T3-S3 V1.2:
+    //   SCK=14, MISO=2, MOSI=11, CS=13
+    sdSPI.begin(VSENSOR_SD_CLK, VSENSOR_SD_MISO, VSENSOR_SD_MOSI, VSENSOR_SD_CS);
+
+    if (!SD.begin(VSENSOR_SD_CS, sdSPI, 400000)) {  // Start slow at 400kHz
         log_e("%s: SD mount FAILED — check wiring / card format (FAT32)", TAG);
-        SPI.end();
+        sdSPI.end();
         return false;
     }
 
@@ -79,7 +87,7 @@ void StorageReader::end() {
 
     if (_mounted) {
         SD.end();
-        SPI.end();
+        sdSPI.end();
         _mounted    = false;
         _imageCount = 0;
         log_i("%s: SD unmounted, SPI released — ready for deep sleep", TAG);
