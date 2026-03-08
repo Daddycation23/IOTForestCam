@@ -318,7 +318,7 @@ void CoapServer::_handleChecksumGet(CoapMessage& req, uint8_t imageIndex,
     ImageInfo info;
     _storage.getImageInfo(imageIndex, info);
 
-    uint16_t checksum = _storage.computeChecksum(imageIndex);
+    uint16_t checksum = (uint16_t)info.checksum;   // Pre-computed at scan time
 
     CoapMessage resp = _makeResponse(req, COAP_CONTENT);
     resp.addOptionUint(COAP_OPT_CONTENT_FORMAT, COAP_FMT_APP_JSON);

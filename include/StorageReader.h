@@ -72,7 +72,7 @@ static constexpr const char* VSENSOR_IMAGE_DIR = "/images";
  * @brief Metadata for a single simulated capture.
  */
 struct ImageInfo {
-    char     filename[64];      ///< Full path, e.g. "/images/img_001.jpg"
+    char     filename[128];     ///< Full path, e.g. "/images/img_001.jpg"
     uint32_t fileSize;          ///< Total bytes
     uint32_t totalBlocks;       ///< ceil(fileSize / BLOCK_SIZE)
     uint32_t checksum;          ///< Simple Fletcher-16 over entire file

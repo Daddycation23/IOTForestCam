@@ -248,13 +248,15 @@ bool StorageReader::_scanDirectory() {
                  VSENSOR_IMAGE_DIR, name);
         img.fileSize    = entry.size();
         img.totalBlocks = (img.fileSize + VSENSOR_BLOCK_SIZE - 1) / VSENSOR_BLOCK_SIZE;
-        img.checksum    = 0;  // Computed lazily via computeChecksum()
-
-        log_d("%s:  [%u] %s — %lu B, %lu blocks",
-              TAG, _imageCount, img.filename, img.fileSize, img.totalBlocks);
-
         entry.close();
         _imageCount++;
+
+        // Pre-compute Fletcher-16 checksum at scan time
+        // (_imageCount already incremented so computeChecksum bounds check passes)
+        img.checksum = computeChecksum(_imageCount - 1);
+
+        log_d("%s:  [%u] %s — %lu B, %lu blocks, checksum=%u",
+              TAG, _imageCount - 1, img.filename, img.fileSize, img.totalBlocks, img.checksum);
     }
 
     dir.close();
