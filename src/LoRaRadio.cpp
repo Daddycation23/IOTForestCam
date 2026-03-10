@@ -37,8 +37,15 @@ bool LoRaRadio::begin() {
         return true;
     }
 
-    // Initialize the dedicated SPI bus for LoRa
-    _loraSPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_CS);
+    // Pull CS high before SPI init — prevents the SX1262 from latching
+    // onto stray SPI traffic during bus setup.
+    pinMode(LORA_CS, OUTPUT);
+    digitalWrite(LORA_CS, HIGH);
+
+    // Initialize the dedicated SPI bus for LoRa.
+    // NOTE: Do NOT pass CS to SPI.begin() — on ESP32-S3 this enables
+    // hardware SS control which conflicts with RadioLib's software CS.
+    _loraSPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI);
 
     // Initialize SX1262 with RF parameters
     log_i("%s: Initializing SX1262 at %.1f MHz, SF%u, BW%.0f kHz...",

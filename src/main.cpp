@@ -1,16 +1,18 @@
 /**
  * @file main.cpp
- * @brief IOT Forest Cam — Tri-mode: Leaf, Gateway, or Relay
+ * @brief IOT Forest Cam — Unified firmware: Leaf, Gateway, or Relay
  *
- * Build with:
- *   pio run -e esp32s3           -> Leaf node   (WiFi AP + CoAP Server + LoRa Beacon TX)
- *   pio run -e esp32s3_gateway   -> Gateway     (LoRa Beacon RX + WiFi STA + CoAP Client)
- *   pio run -e esp32s3_relay     -> Relay node  (Leaf + LoRa Beacon Relay)
+ * Role is selected at boot via a 5-second OLED menu using the built-in
+ * BOOT button (GPIO 0).  The selection is persisted to NVS so it survives
+ * power cycles — no recompilation needed to change roles.
+ *
+ * Build: pio run -e esp32s3_unified
  *
  * Hardware: LILYGO T3-S3 V1.2
  *   - OLED:    SSD1306 128x64 (I2C: SDA=18, SCL=17)
  *   - SD Card: HSPI (MOSI=11, MISO=2, CLK=14, CS=13)
  *   - LoRa:    SX1262 FSPI (MOSI=6, MISO=3, SCK=5, CS=7, DIO1=33, BUSY=34, RST=8)
+ *   - BOOT:    GPIO 0 (active-low, used for role selection at boot)
  *
  * @author  CS Group 2
  * @date    2026
@@ -20,36 +22,79 @@
 #include <WiFi.h>
 #include <Wire.h>
 #include <SPI.h>
+#include <SD.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
-// LoRa + AODV (all modes)
+// ── LoRa + AODV (all roles) ──────────────────────────────────
 #include "LoRaRadio.h"
 #include "LoRaBeacon.h"
 #include "LoRaDispatch.h"
 #include "AodvPacket.h"
 #include "AodvRouter.h"
 
-#ifdef GATEWAY_MODE
-  #include <SD.h>
-  #include "CoapClient.h"
-  #include "NodeRegistry.h"
-  #include "HarvestLoop.h"
-#else
-  #include "StorageReader.h"
-  #include "CoapServer.h"
-  #ifdef RELAY_MODE
-    #include <SD.h>
-    #include "CoapClient.h"
-  #endif
-#endif
+// ── Gateway role ─────────────────────────────────────────────
+#include "CoapClient.h"
+#include "NodeRegistry.h"
+#include "HarvestLoop.h"
+
+// ── Leaf / Relay role ────────────────────────────────────────
+#include "StorageReader.h"
+#include "CoapServer.h"
+
+// ── Dynamic role selection ───────────────────────────────────
+#include "RoleConfig.h"
 
 // ─── LILYGO T3-S3 V1.2 Pin Definitions ──────────────────────
 #define OLED_SDA 18
 #define OLED_SCL 17
 
-// ─── Shared OLED ─────────────────────────────────────────────
+// ─── Runtime role ─────────────────────────────────────────────
+/// Set once in setup() by RoleConfig::selectRole(); never modified after that.
+NodeRole g_role = NODE_ROLE_LEAF;
+
+// ─── Shared hardware ──────────────────────────────────────────
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
+LoRaRadio         loraRadio;
+AodvRouter        aodvRouter(loraRadio);   // loraRadio must be declared first
+
+// ─── Beacon timing ────────────────────────────────────────────
+static constexpr uint32_t BEACON_INTERVAL_MS = 30000;   // 30 seconds
+static constexpr uint32_t BEACON_JITTER_MS   = 2000;    // +/- 2 s jitter
+
+// ─── SD SPI bus ───────────────────────────────────────────────
+static SPIClass gwSPI(HSPI);
+
+// ─── Gateway objects ──────────────────────────────────────────
+// IMPORTANT: declaration order is significant — C++ initialises file-scope
+// objects in declaration order within a translation unit.
+// HarvestLoop stores NodeRegistry& and CoapClient& so they must come first.
+NodeRegistry registry;
+CoapClient   coapClient;
+HarvestLoop  harvestLoop(registry, coapClient);
+
+// ─── Leaf / Relay objects ─────────────────────────────────────
+// CoapServer stores StorageReader& so storage must come first.
+StorageReader storage;
+CoapServer    coapServer(storage);
+
+// ─── Leaf / Relay state ───────────────────────────────────────
+static const char* AP_SSID_PREFIX = "ForestCam";
+static const char* AP_PASS        = "forestcam123";
+static char _apSSID[32];
+
+static bool    _loraReady  = false;
+static bool    _relayBusy  = false;
+static uint8_t _relayCmdId = 0;
+
+// ─── Gateway timing ───────────────────────────────────────────
+static constexpr uint32_t HARVEST_LISTEN_PERIOD_MS = 60000;  // Listen 60 s before harvest
+static constexpr uint32_t ROUTE_DISCOVERY_DELAY_MS = 15000;  // RREQ 15 s after boot
+
+
+// =============================================================
+// Shared helpers
+// =============================================================
 
 void displayStatus(const char* line) {
     display.clearDisplay();
@@ -59,34 +104,11 @@ void displayStatus(const char* line) {
     display.display();
 }
 
-// ─── Shared LoRa Radio ──────────────────────────────────────
-LoRaRadio loraRadio;
-
-// ─── Shared AODV Router ────────────────────────────────────
-AodvRouter aodvRouter(loraRadio);
-
-// ─── Beacon Timing ──────────────────────────────────────────
-static constexpr uint32_t BEACON_INTERVAL_MS = 30000;   // 30 seconds
-static constexpr uint32_t BEACON_JITTER_MS   = 2000;    // +/- 2s random jitter
-
-// ─── HSPI bus for SD card (shared instance) ─────────────────
-static SPIClass gwSPI(HSPI);
-
-
 // =============================================================
-// GATEWAY MODE — LoRa Beacon RX + WiFi STA + CoAP Client
+// Gateway helpers
 // =============================================================
-#ifdef GATEWAY_MODE
 
-// ─── Gateway Configuration ──────────────────────────────────
-static constexpr uint32_t HARVEST_LISTEN_PERIOD_MS = 60000;  // Listen 60s before harvest
-static constexpr uint32_t ROUTE_DISCOVERY_DELAY_MS = 15000;  // Broadcast RREQ 15s after boot
-
-NodeRegistry registry;
-CoapClient   coapClient;
-HarvestLoop  harvestLoop(registry, coapClient);
-
-// ─── AODV route-discovered callback ─────────────────────────
+// ── AODV route-discovered callback ───────────────────────────
 static void onRouteDiscovered(const uint8_t destId[6], uint8_t hopCount) {
     RouteEntry route;
     if (aodvRouter.getRoute(destId, route)) {
@@ -94,25 +116,146 @@ static void onRouteDiscovered(const uint8_t destId[6], uint8_t hopCount) {
     }
 }
 
-void setup() {
-    Serial.begin(115200);
-    delay(1000);
+// =============================================================
+// Relay helper — blocking store-and-forward harvest
+// =============================================================
 
-    // ── OLED Init ────────────────────────────────────────────
-    Wire.begin(OLED_SDA, OLED_SCL);
-    display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
-    display.setTextSize(1);
-    display.setTextColor(SSD1306_WHITE);
-    displayStatus("Gateway Mode");
+/**
+ * Execute a relay harvest: switch to AP_STA, connect to the target leaf,
+ * download images to /cached/ on SD, send HARVEST_ACK via LoRa.
+ *
+ * This is a BLOCKING call (up to ~120 s).  The LoRa radio is resumed
+ * before entering the WiFi-blocking section.
+ *
+ * Only valid when g_role == NODE_ROLE_RELAY.
+ */
+static void relayHarvest(const HarvestCmdPacket& cmd) {
+    if (g_role != NODE_ROLE_RELAY) return;
 
+    Serial.printf("\n╔══════════════════════════════════════╗\n");
+    Serial.printf("║  RELAY HARVEST: %-20s║\n", cmd.ssid);
+    Serial.printf("╚══════════════════════════════════════╝\n\n");
+
+    _relayBusy  = true;
+    _relayCmdId = cmd.cmdId;
+
+    HarvestAckPacket ack;
+    ack.cmdId = cmd.cmdId;
+    WiFi.macAddress(ack.relayId);
+    ack.status     = HARVEST_STATUS_OK;
+    ack.imageCount = 0;
+    ack.totalBytes = 0;
+
+    // ── Switch to AP+STA — keeps relay AP running ────────────
+    WiFi.mode(WIFI_AP_STA);
+    delay(200);
+
+    // ── Connect STA to the target leaf's AP ─────────────────
+    Serial.printf("[Relay] Connecting to %s...\n", cmd.ssid);
+    WiFi.begin(cmd.ssid, AP_PASS);
+
+    uint32_t connectStart = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - connectStart < 15000) {
+        delay(250);
+        Serial.print(".");
+    }
+    Serial.println();
+
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.printf("[Relay] WiFi connect to %s FAILED\n", cmd.ssid);
+        ack.status = HARVEST_STATUS_WIFI_FAIL;
+    } else {
+        Serial.printf("[Relay] Connected to %s (IP: %s)\n",
+                      cmd.ssid, WiFi.localIP().toString().c_str());
+
+        // ── Download images from leaf via CoAP ──────────────
+        CoapClient relayCoap;
+        if (!relayCoap.begin()) {
+            Serial.println("[Relay] CoAP client init failed");
+            ack.status = HARVEST_STATUS_COAP_FAIL;
+        } else {
+            IPAddress leafIP(192, 168, 4, 1);
+            uint16_t  leafPort = COAP_DEFAULT_PORT;
+
+            // Get image count from /info endpoint
+            uint8_t infoBuf[512];
+            size_t  infoLen = sizeof(infoBuf);
+            CoapClientError err = relayCoap.get(leafIP, leafPort,
+                                                 "info", infoBuf, infoLen);
+
+            uint8_t imageCount = 0;
+            if (err == COAP_CLIENT_OK) {
+                infoBuf[infoLen] = '\0';
+                const char* countKey = strstr((char*)infoBuf, "\"count\":");
+                if (countKey) imageCount = (uint8_t)atoi(countKey + 8);
+            }
+
+            if (imageCount > 0) {
+                if (!SD.exists("/cached")) SD.mkdir("/cached");
+
+                for (uint8_t i = 0; i < imageCount; i++) {
+                    char outPath[64];
+                    snprintf(outPath, sizeof(outPath), "/cached/relay_img_%03u.jpg", i);
+
+                    if (SD.exists(outPath)) SD.remove(outPath);
+
+                    TransferStats stats;
+                    err = relayCoap.downloadImage(leafIP, leafPort, i, outPath, stats);
+
+                    if (err == COAP_CLIENT_OK) {
+                        ack.imageCount++;
+                        ack.totalBytes += stats.totalBytes;
+                        Serial.printf("[Relay] Cached img %u: %lu bytes -> %s\n",
+                                      i, stats.totalBytes, outPath);
+                    } else {
+                        Serial.printf("[Relay] Failed to download image %u\n", i);
+                    }
+                }
+            } else {
+                Serial.println("[Relay] No images to cache");
+            }
+
+            relayCoap.stop();
+        }
+
+        WiFi.disconnect(true);
+    }
+
+    // ── Return to AP-only mode ───────────────────────────────
+    WiFi.mode(WIFI_AP);
+    WiFi.softAP(_apSSID, AP_PASS);
+    delay(200);
+    Serial.printf("[Relay] Back to AP mode: %s\n", _apSSID);
+
+    // ── Send HARVEST_ACK via LoRa ────────────────────────────
+    Serial.printf("[Relay] ACK: status=%s, images=%u, bytes=%lu\n",
+                  HarvestAckPacket::statusToString(ack.status),
+                  ack.imageCount, ack.totalBytes);
+
+    uint8_t ackBuf[64];
+    uint8_t ackLen = ack.serialize(ackBuf, sizeof(ackBuf));
+    if (ackLen > 0) {
+        loraRadio.send(ackBuf, ackLen);
+        loraRadio.startReceive();
+    }
+
+    _relayBusy = false;
+    Serial.println("[Relay] Harvest command complete\n");
+}
+
+
+// =============================================================
+// Role-specific init helpers
+// =============================================================
+
+static void initGateway() {
     Serial.println("\n===================================");
     Serial.println("  IOT Forest Cam — Gateway (LoRa)");
     Serial.println("  AODV Routing Enabled");
     Serial.println("===================================\n");
 
-    // ── SD Card Init (for saving received images) ────────────
+    // ── SD Card ──────────────────────────────────────────────
     displayStatus("Mounting SD...");
-
     pinMode(VSENSOR_SD_CS, OUTPUT);
     digitalWrite(VSENSOR_SD_CS, HIGH);
     delay(100);
@@ -125,29 +268,27 @@ void setup() {
         SD.mkdir("/received");
     }
 
-    // ── LoRa Init ────────────────────────────────────────────
+    // ── LoRa ─────────────────────────────────────────────────
     displayStatus("LoRa Init...");
     if (!loraRadio.begin()) {
         displayStatus("LoRa FAILED!");
         Serial.println("[ERROR] LoRa SX1262 init failed — check wiring");
         while (true) delay(1000);
     }
-
-    // Enter continuous receive mode for beacons + AODV
     loraRadio.startReceive();
 
-    // ── AODV Router Init ─────────────────────────────────────
+    // ── AODV Router ──────────────────────────────────────────
     uint8_t myMac[6];
     WiFi.macAddress(myMac);
     aodvRouter.begin(myMac);
     aodvRouter.setRouteDiscoveredCallback(onRouteDiscovered);
     harvestLoop.setAodv(&aodvRouter, &loraRadio);
 
-    // ── WiFi in STA mode (but don't connect yet) ─────────────
+    // ── WiFi STA (connect only during harvest) ───────────────
     WiFi.mode(WIFI_STA);
     WiFi.disconnect(true);
 
-    // ── Display Ready Status ─────────────────────────────────
+    // ── OLED ready screen ────────────────────────────────────
     display.clearDisplay();
     display.setCursor(0, 0);
     display.println("Gateway (AODV)");
@@ -161,7 +302,113 @@ void setup() {
     Serial.println("[OK] Gateway listening for LoRa beacons + AODV...\n");
 }
 
-void loop() {
+static void initLeafRelay() {
+    if (g_role == NODE_ROLE_RELAY) {
+        displayStatus("Relay Mode");
+        Serial.println("\n======================================");
+        Serial.println("  IOT Forest Cam — Relay (LoRa+CoAP)");
+        Serial.println("  AODV Routing Enabled");
+        Serial.println("======================================\n");
+    } else {
+        displayStatus("Leaf Mode");
+        Serial.println("\n====================================");
+        Serial.println("  IOT Forest Cam — Leaf (LoRa+CoAP)");
+        Serial.println("  AODV Routing Enabled");
+        Serial.println("====================================\n");
+    }
+
+    // ── SD Card (images stored in /images/) ──────────────────
+    displayStatus("Mounting SD...");
+    if (!storage.begin()) {
+        displayStatus("SD Mount FAILED!");
+        Serial.println("[ERROR] SD card mount failed. Check wiring and /images/ folder.");
+        while (true) delay(1000);
+    }
+
+    Serial.printf("[OK] SD card: %d image(s) found\n", storage.imageCount());
+
+    if (storage.imageCount() == 0) {
+        displayStatus("No images on SD!");
+        Serial.println("[ERROR] No JPEG files in /images/ directory.");
+        while (true) delay(1000);
+    }
+
+    for (uint8_t i = 0; i < storage.imageCount(); i++) {
+        ImageInfo info;
+        if (storage.getImageInfo(i, info)) {
+            Serial.printf("  [%u] %s — %lu bytes (%lu blocks)\n",
+                          i, info.filename, info.fileSize, info.totalBlocks);
+        }
+    }
+
+    // ── WiFi AP ──────────────────────────────────────────────
+    displayStatus("Starting WiFi AP...");
+
+    uint8_t mac[6];
+    WiFi.macAddress(mac);
+    snprintf(_apSSID, sizeof(_apSSID), "%s-%02X%02X",
+             AP_SSID_PREFIX, mac[4], mac[5]);
+
+    WiFi.mode(WIFI_AP);
+    WiFi.softAP(_apSSID, AP_PASS);
+    delay(100);
+
+    IPAddress ip = WiFi.softAPIP();
+    Serial.printf("[OK] WiFi AP: %s (pass: %s)\n", _apSSID, AP_PASS);
+    Serial.printf("[OK] IP: %s\n", ip.toString().c_str());
+
+    // ── CoAP Server ──────────────────────────────────────────
+    if (!coapServer.begin()) {
+        displayStatus("CoAP FAILED!");
+        Serial.println("[ERROR] CoAP server failed to start.");
+        while (true) delay(1000);
+    }
+
+    Serial.printf("[OK] CoAP server on port %u\n", COAP_DEFAULT_PORT);
+    Serial.println();
+    Serial.println("Resources:");
+    Serial.println("  GET /info             — Image catalogue (JSON)");
+    Serial.println("  GET /image/{n}        — Image via Block2 transfer");
+    Serial.println("  GET /checksum/{n}     — Fletcher-16 checksum (JSON)");
+    Serial.println("  GET /.well-known/core — Resource discovery");
+    Serial.println();
+
+    // ── LoRa ─────────────────────────────────────────────────
+    displayStatus("LoRa Init...");
+    if (!loraRadio.begin()) {
+        Serial.println("[WARN] LoRa init failed — running without beacons");
+        // Non-fatal: leaf/relay still serves CoAP for direct connections
+    } else {
+        _loraReady = true;
+        loraRadio.startReceive();
+        Serial.println("[OK] LoRa beacon TX + RX enabled (AODV routing)");
+    }
+
+    // ── AODV Router ──────────────────────────────────────────
+    if (_loraReady) {
+        aodvRouter.begin(mac);
+    }
+
+    // ── OLED ready screen ────────────────────────────────────
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.println(g_role == NODE_ROLE_RELAY ? "Relay (AODV)" : "Leaf (AODV)");
+    display.printf("AP: %s\n", _apSSID);
+    display.printf("IP: %s\n", ip.toString().c_str());
+    display.printf("CoAP: :%u\n", COAP_DEFAULT_PORT);
+    display.printf("Imgs: %d  LoRa:%s\n",
+                   storage.imageCount(), _loraReady ? "OK" : "NO");
+    display.println("────────────────────");
+    display.println("Reqs: 0  Blks: 0");
+    display.display();
+}
+
+
+// =============================================================
+// Role-specific loop bodies
+// =============================================================
+
+static void loopGateway() {
     // ── Poll for LoRa packets (dispatch by type) ────────────
     LoRaRxResult rx;
     if (loraRadio.checkReceive(rx)) {
@@ -198,8 +445,6 @@ void loop() {
                 break;
             }
             case PKT_TYPE_RREQ: {
-                // Gateway shouldn't normally receive its own RREQ back,
-                // but relay might forward others' RREQs
                 RreqPacket rreq;
                 if (rreq.parse(rx.data, rx.length)) {
                     aodvRouter.handleRREQ(rreq, rx.rssi);
@@ -233,7 +478,6 @@ void loop() {
     if (millis() - lastExpireMs >= 10000) {
         lastExpireMs = millis();
 
-        // Check which nodes expired and notify AODV
         for (uint8_t i = 0; i < REGISTRY_MAX_NODES; i++) {
             NodeEntry entry;
             if (registry.getNode(i, entry)) {
@@ -246,7 +490,7 @@ void loop() {
     }
 
     // ── Auto-broadcast RREQ for topology discovery ───────────
-    static bool routeDiscoveryDone = false;
+    static bool     routeDiscoveryDone = false;
     static uint32_t bootMs = millis();
 
     if (!routeDiscoveryDone && millis() - bootMs >= ROUTE_DISCOVERY_DELAY_MS &&
@@ -256,21 +500,22 @@ void loop() {
         routeDiscoveryDone = true;
     }
 
-    // ── Re-run route discovery before each harvest ───────────
-    static uint32_t listenStartMs = millis();
-    static bool firstHarvestDone = false;
+    // ── Start harvest after listen period ────────────────────
+    static uint32_t listenStartMs  = millis();
+    static bool     firstHarvestDone = false;
+    static HarvestState prevState  = HARVEST_IDLE;
+    HarvestState curState = harvestLoop.state();
 
-    if (harvestLoop.state() == HARVEST_IDLE &&
+    if (curState == HARVEST_IDLE &&
         registry.activeCount() > 0 &&
         millis() - listenStartMs >= HARVEST_LISTEN_PERIOD_MS)
     {
-        // Trigger route discovery if not recently done
         if (!aodvRouter.isDiscoveryPending()) {
             Serial.println("\n[AODV] Pre-harvest route discovery...");
             aodvRouter.discoverAll();
         }
 
-        Serial.printf("\n[Harvest] Starting cycle — %u node(s) registered, %u routes\n",
+        Serial.printf("\n[Harvest] Starting cycle — %u node(s), %u routes\n",
                       registry.activeCount(), aodvRouter.routeCount());
         registry.dump();
         aodvRouter.dumpRoutes();
@@ -282,18 +527,15 @@ void loop() {
     harvestLoop.tick();
 
     // ── Reset listen timer after harvest completes ───────────
-    static HarvestState prevState = HARVEST_IDLE;
-    HarvestState curState = harvestLoop.state();
-
     if (curState == HARVEST_IDLE && prevState == HARVEST_DONE) {
         listenStartMs = millis();
-        routeDiscoveryDone = false;   // Re-discover routes next cycle
+        routeDiscoveryDone = false;
         loraRadio.startReceive();
         Serial.println("[Gateway] Resuming beacon listening...\n");
     }
     prevState = curState;
 
-    // ── OLED Update ──────────────────────────────────────────
+    // ── OLED Update (every 2 s) ───────────────────────────────
     static uint32_t lastDisplayMs = 0;
     if (millis() - lastDisplayMs >= 2000) {
         lastDisplayMs = millis();
@@ -301,14 +543,16 @@ void loop() {
         display.clearDisplay();
         display.setCursor(0, 0);
         display.println("Gateway (AODV)");
-        display.printf("Nodes:%u Rtes:%u\n", registry.activeCount(), aodvRouter.routeCount());
+        display.printf("Nodes:%u Rtes:%u\n",
+                       registry.activeCount(), aodvRouter.routeCount());
         display.printf("State: %s\n", harvestLoop.stateStr());
 
         if (curState >= HARVEST_CONNECT && curState <= HARVEST_DOWNLOAD) {
             display.printf("-> %s\n", harvestLoop.currentNodeSSID());
         } else if (firstHarvestDone) {
             const HarvestCycleStats& stats = harvestLoop.lastCycleStats();
-            display.printf("Last: %u OK, %u fail\n", stats.nodesSucceeded, stats.nodesFailed);
+            display.printf("Last: %u OK, %u fail\n",
+                           stats.nodesSucceeded, stats.nodesFailed);
             display.printf("Imgs: %lu\n", stats.totalImages);
         } else {
             uint32_t remaining = 0;
@@ -322,307 +566,33 @@ void loop() {
     }
 }
 
-
-// =============================================================
-// LEAF / RELAY MODE — WiFi AP + CoAP Server + LoRa Beacons
-// =============================================================
-#else
-
-static const char* AP_SSID_PREFIX = "ForestCam";
-static const char* AP_PASS        = "forestcam123";
-static char _apSSID[32];
-
-StorageReader storage;
-CoapServer    coapServer(storage);
-
-// LoRa beacon state
-static bool _loraReady = false;
-
-#ifdef RELAY_MODE
-// ── Relay-specific: harvest command handling ─────────────────
-
-static bool     _relayBusy      = false;    // Currently executing a harvest command
-static uint8_t  _relayCmdId     = 0;        // Active command ID
-
-/**
- * Execute a relay harvest: connect to the target leaf, download images to /cached/,
- * then send HARVEST_ACK back to the gateway.
- *
- * This is a BLOCKING operation — called from the main loop when a HARVEST_CMD arrives.
- * The relay switches to AP_STA mode to keep its AP running while connecting to the leaf.
- */
-static void relayHarvest(const HarvestCmdPacket& cmd) {
-    Serial.printf("\n╔══════════════════════════════════════╗\n");
-    Serial.printf("║  RELAY HARVEST: %s  ║\n", cmd.ssid);
-    Serial.printf("╚══════════════════════════════════════╝\n\n");
-
-    _relayBusy = true;
-    _relayCmdId = cmd.cmdId;
-
-    HarvestAckPacket ack;
-    ack.cmdId = cmd.cmdId;
-    WiFi.macAddress(ack.relayId);
-    ack.status     = HARVEST_STATUS_OK;
-    ack.imageCount = 0;
-    ack.totalBytes = 0;
-
-    // ── Switch to AP+STA mode (keep AP running) ─────────────
-    WiFi.mode(WIFI_AP_STA);
-    delay(200);
-
-    // ── Connect STA to the target leaf's AP ─────────────────
-    Serial.printf("[Relay] Connecting to %s...\n", cmd.ssid);
-    WiFi.begin(cmd.ssid, AP_PASS);
-
-    uint32_t connectStart = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - connectStart < 15000) {
-        delay(250);
-        Serial.print(".");
-    }
-    Serial.println();
-
-    if (WiFi.status() != WL_CONNECTED) {
-        Serial.printf("[Relay] WiFi connect to %s FAILED\n", cmd.ssid);
-        ack.status = HARVEST_STATUS_WIFI_FAIL;
-    } else {
-        Serial.printf("[Relay] Connected to %s (IP: %s)\n",
-                      cmd.ssid, WiFi.localIP().toString().c_str());
-
-        // ── Download images from leaf via CoAP ──────────────
-        CoapClient relayCoap;
-        if (!relayCoap.begin()) {
-            Serial.println("[Relay] CoAP client init failed");
-            ack.status = HARVEST_STATUS_COAP_FAIL;
-        } else {
-            IPAddress leafIP(192, 168, 4, 1);
-            uint16_t leafPort = COAP_DEFAULT_PORT;
-
-            // Get image count
-            uint8_t infoBuf[512];
-            size_t infoLen = sizeof(infoBuf);
-            CoapClientError err = relayCoap.get(leafIP, leafPort, "info", infoBuf, infoLen);
-
-            uint8_t imageCount = 0;
-            if (err == COAP_CLIENT_OK) {
-                infoBuf[infoLen] = '\0';
-                const char* countKey = strstr((char*)infoBuf, "\"count\":");
-                if (countKey) {
-                    imageCount = (uint8_t)atoi(countKey + 8);
-                }
-            }
-
-            if (imageCount > 0) {
-                // Create /cached directory on SD
-                if (!SD.exists("/cached")) {
-                    SD.mkdir("/cached");
-                }
-
-                // Download each image
-                for (uint8_t i = 0; i < imageCount; i++) {
-                    char outPath[64];
-                    snprintf(outPath, sizeof(outPath), "/cached/relay_img_%03u.jpg", i);
-
-                    if (SD.exists(outPath)) {
-                        SD.remove(outPath);
-                    }
-
-                    TransferStats stats;
-                    err = relayCoap.downloadImage(leafIP, leafPort, i, outPath, stats);
-
-                    if (err == COAP_CLIENT_OK) {
-                        ack.imageCount++;
-                        ack.totalBytes += stats.totalBytes;
-                        Serial.printf("[Relay] Cached image %u: %lu bytes -> %s\n",
-                                      i, stats.totalBytes, outPath);
-                    } else {
-                        Serial.printf("[Relay] Failed to download image %u\n", i);
-                    }
-                }
-            } else {
-                Serial.println("[Relay] No images to cache");
-            }
-
-            relayCoap.stop();
-        }
-
-        // ── Disconnect STA, return to AP-only ────────────────
-        WiFi.disconnect(true);
-    }
-
-    WiFi.mode(WIFI_AP);
-    WiFi.softAP(_apSSID, AP_PASS);
-    delay(200);
-    Serial.printf("[Relay] Back to AP mode: %s\n", _apSSID);
-
-    // ── Send HARVEST_ACK via LoRa ────────────────────────────
-    Serial.printf("[Relay] Sending HARVEST_ACK: status=%s, images=%u, bytes=%lu\n",
-                  HarvestAckPacket::statusToString(ack.status),
-                  ack.imageCount, ack.totalBytes);
-
-    uint8_t ackBuf[64];
-    uint8_t ackLen = ack.serialize(ackBuf, sizeof(ackBuf));
-    if (ackLen > 0) {
-        loraRadio.send(ackBuf, ackLen);
-        loraRadio.startReceive();
-    }
-
-    _relayBusy = false;
-    Serial.println("[Relay] Harvest command complete\n");
-}
-#endif // RELAY_MODE
-
-void setup() {
-    Serial.begin(115200);
-    delay(1000);
-
-    // ── OLED Init ────────────────────────────────────────────
-    Wire.begin(OLED_SDA, OLED_SCL);
-    display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
-    display.setTextSize(1);
-    display.setTextColor(SSD1306_WHITE);
-
-#ifdef RELAY_MODE
-    displayStatus("Relay Mode");
-    Serial.println("\n======================================");
-    Serial.println("  IOT Forest Cam — Relay (LoRa+CoAP)");
-    Serial.println("  AODV Routing Enabled");
-    Serial.println("======================================\n");
-#else
-    displayStatus("Leaf Mode");
-    Serial.println("\n====================================");
-    Serial.println("  IOT Forest Cam — Leaf (LoRa+CoAP)");
-    Serial.println("  AODV Routing Enabled");
-    Serial.println("====================================\n");
-#endif
-
-    // ── SD Card Init ─────────────────────────────────────────
-    displayStatus("Mounting SD...");
-
-    if (!storage.begin()) {
-        displayStatus("SD Mount FAILED!");
-        Serial.println("[ERROR] SD card mount failed. Check wiring and /images/ folder.");
-        while (true) delay(1000);
-    }
-
-    Serial.printf("[OK] SD card: %d image(s) found\n", storage.imageCount());
-
-    if (storage.imageCount() == 0) {
-        displayStatus("No images on SD!");
-        Serial.println("[ERROR] No JPEG files in /images/ directory.");
-        while (true) delay(1000);
-    }
-
-    for (uint8_t i = 0; i < storage.imageCount(); i++) {
-        ImageInfo info;
-        if (storage.getImageInfo(i, info)) {
-            Serial.printf("  [%u] %s — %lu bytes (%lu blocks)\n",
-                          i, info.filename, info.fileSize, info.totalBlocks);
-        }
-    }
-
-    // ── WiFi AP Init ─────────────────────────────────────────
-    displayStatus("Starting WiFi AP...");
-
-    uint8_t mac[6];
-    WiFi.macAddress(mac);
-    snprintf(_apSSID, sizeof(_apSSID), "%s-%02X%02X",
-             AP_SSID_PREFIX, mac[4], mac[5]);
-
-    WiFi.mode(WIFI_AP);
-    WiFi.softAP(_apSSID, AP_PASS);
-    delay(100);
-
-    IPAddress ip = WiFi.softAPIP();
-    Serial.printf("[OK] WiFi AP: %s (pass: %s)\n", _apSSID, AP_PASS);
-    Serial.printf("[OK] IP: %s\n", ip.toString().c_str());
-
-    // ── CoAP Server Init ─────────────────────────────────────
-    if (!coapServer.begin()) {
-        displayStatus("CoAP FAILED!");
-        Serial.println("[ERROR] CoAP server failed to start.");
-        while (true) delay(1000);
-    }
-
-    Serial.printf("[OK] CoAP server on port %u\n", COAP_DEFAULT_PORT);
-    Serial.println();
-    Serial.println("Resources:");
-    Serial.println("  GET /info             — Image catalogue (JSON)");
-    Serial.println("  GET /image/{n}        — Image via Block2 transfer");
-    Serial.println("  GET /checksum/{n}     — Fletcher-16 checksum (JSON)");
-    Serial.println("  GET /.well-known/core — Resource discovery");
-    Serial.println();
-
-    // ── LoRa Init ────────────────────────────────────────────
-    displayStatus("LoRa Init...");
-    if (!loraRadio.begin()) {
-        Serial.println("[WARN] LoRa init failed — running without beacons");
-        // Non-fatal: leaf still works for direct WiFi connection
-    } else {
-        _loraReady = true;
-        Serial.println("[OK] LoRa beacon TX enabled (30s interval)");
-
-        // All nodes need RX for AODV (leaf listens for RREQ)
-        loraRadio.startReceive();
-        Serial.println("[OK] LoRa RX enabled (AODV routing)");
-    }
-
-    // ── AODV Router Init ─────────────────────────────────────
-    if (_loraReady) {
-        aodvRouter.begin(mac);
-    }
-
-    // ── Display Ready Status ─────────────────────────────────
-    display.clearDisplay();
-    display.setCursor(0, 0);
-#ifdef RELAY_MODE
-    display.println("Relay (AODV)");
-#else
-    display.println("Leaf (AODV)");
-#endif
-    display.printf("AP: %s\n", _apSSID);
-    display.printf("IP: %s\n", ip.toString().c_str());
-    display.printf("CoAP: :%u\n", COAP_DEFAULT_PORT);
-    display.printf("Imgs: %d  LoRa:%s\n",
-                   storage.imageCount(),
-                   _loraReady ? "OK" : "NO");
-    display.println("────────────────────");
-    display.println("Reqs: 0  Blks: 0");
-    display.display();
-}
-
-void loop() {
+static void loopLeafRelay() {
     // ── CoAP Server ──────────────────────────────────────────
     coapServer.loop();
 
-    // ── LoRa Beacon Broadcast (every ~30s with jitter) ───────
+    // ── LoRa Beacon Broadcast (every ~30 s with jitter) ──────
     if (_loraReady) {
-        static uint32_t lastBeaconMs = 0;
-        static uint32_t nextInterval = BEACON_INTERVAL_MS;
+        static uint32_t lastBeaconMs  = 0;
+        static uint32_t nextInterval  = BEACON_INTERVAL_MS;
 
         if (millis() - lastBeaconMs >= nextInterval) {
             lastBeaconMs = millis();
-            // Add random jitter to avoid synchronized collisions
             nextInterval = BEACON_INTERVAL_MS + random(-BEACON_JITTER_MS, BEACON_JITTER_MS);
 
-            // Build beacon packet
             BeaconPacket beacon;
             beacon.packetType = BEACON_TYPE_BEACON;
             beacon.ttl = 2;
             WiFi.macAddress(beacon.nodeId);
-#ifdef RELAY_MODE
-            beacon.nodeRole = NODE_ROLE_RELAY;
-#else
-            beacon.nodeRole = NODE_ROLE_LEAF;
-#endif
-            beacon.ssidLen = strlen(_apSSID);
+            beacon.nodeRole   = (g_role == NODE_ROLE_RELAY)
+                                    ? NODE_ROLE_RELAY : NODE_ROLE_LEAF;
+            beacon.ssidLen    = strlen(_apSSID);
             if (beacon.ssidLen > BEACON_MAX_SSID) beacon.ssidLen = BEACON_MAX_SSID;
             memcpy(beacon.ssid, _apSSID, beacon.ssidLen);
             beacon.ssid[beacon.ssidLen] = '\0';
             beacon.imageCount = storage.imageCount();
-            beacon.batteryPct = 0xFF;       // USB powered
-            beacon.uptimeMin = (uint16_t)(millis() / 60000);
+            beacon.batteryPct = 0xFF;         // USB powered
+            beacon.uptimeMin  = (uint16_t)(millis() / 60000);
 
-            // Serialize and transmit
             uint8_t buf[BEACON_MAX_SIZE];
             uint8_t len = beacon.serialize(buf, sizeof(buf));
             if (len > 0) {
@@ -631,48 +601,47 @@ void loop() {
                               len, _apSSID, beacon.imageCount);
             }
 
-            // Resume receive mode after transmitting
             loraRadio.startReceive();
         }
     }
 
-    // ── LoRa RX: Dispatch all packet types ──────────────────
+    // ── LoRa RX: Dispatch all packet types ───────────────────
     if (_loraReady) {
         LoRaRxResult rx;
         if (loraRadio.checkReceive(rx)) {
             uint8_t pktType = getLoRaPacketType(rx.data, rx.length);
 
             switch (pktType) {
-#ifdef RELAY_MODE
                 case BEACON_TYPE_BEACON:
                 case BEACON_TYPE_BEACON_RELAY: {
-                    // Relay: re-broadcast other nodes' beacons
-                    BeaconPacket received;
-                    if (received.parse(rx.data, rx.length)) {
-                        uint8_t myMac[6];
-                        WiFi.macAddress(myMac);
+                    // Relay only: re-broadcast other nodes' beacons
+                    if (g_role == NODE_ROLE_RELAY) {
+                        BeaconPacket received;
+                        if (received.parse(rx.data, rx.length)) {
+                            uint8_t myMac[6];
+                            WiFi.macAddress(myMac);
 
-                        if (memcmp(received.nodeId, myMac, 6) != 0 && received.ttl > 1) {
-                            received.ttl--;
-                            received.packetType = BEACON_TYPE_BEACON_RELAY;
+                            if (memcmp(received.nodeId, myMac, 6) != 0 && received.ttl > 1) {
+                                received.ttl--;
+                                received.packetType = BEACON_TYPE_BEACON_RELAY;
 
-                            uint8_t relayBuf[BEACON_MAX_SIZE];
-                            uint8_t relayLen = received.serialize(relayBuf, sizeof(relayBuf));
+                                uint8_t relayBuf[BEACON_MAX_SIZE];
+                                uint8_t relayLen = received.serialize(relayBuf, sizeof(relayBuf));
 
-                            if (relayLen > 0) {
-                                delay(random(100, 500));
-                                loraRadio.send(relayBuf, relayLen);
+                                if (relayLen > 0) {
+                                    delay(random(100, 500));
+                                    loraRadio.send(relayBuf, relayLen);
 
-                                char idStr[24];
-                                received.nodeIdToString(idStr, sizeof(idStr));
-                                Serial.printf("[LoRa] RELAYED beacon from %s (%s), TTL=%u\n",
-                                              received.ssid, idStr, received.ttl);
+                                    char idStr[24];
+                                    received.nodeIdToString(idStr, sizeof(idStr));
+                                    Serial.printf("[LoRa] RELAYED beacon from %s (%s), TTL=%u\n",
+                                                  received.ssid, idStr, received.ttl);
+                                }
                             }
                         }
                     }
                     break;
                 }
-#endif // RELAY_MODE
 
                 case PKT_TYPE_RREQ: {
                     RreqPacket rreq;
@@ -698,27 +667,26 @@ void loop() {
                     break;
                 }
 
-#ifdef RELAY_MODE
                 case PKT_TYPE_HARVEST_CMD: {
-                    HarvestCmdPacket cmd;
-                    if (cmd.parse(rx.data, rx.length)) {
-                        uint8_t myMac[6];
-                        WiFi.macAddress(myMac);
-                        if (memcmp(cmd.relayId, myMac, 6) == 0 && !_relayBusy) {
-                            loraRadio.startReceive();  // Resume RX before blocking harvest
-                            relayHarvest(cmd);
+                    // Relay only: gateway telling us to fetch from a leaf
+                    if (g_role == NODE_ROLE_RELAY) {
+                        HarvestCmdPacket cmd;
+                        if (cmd.parse(rx.data, rx.length)) {
+                            uint8_t myMac[6];
+                            WiFi.macAddress(myMac);
+                            if (memcmp(cmd.relayId, myMac, 6) == 0 && !_relayBusy) {
+                                loraRadio.startReceive();  // Resume RX before blocking
+                                relayHarvest(cmd);
+                            }
                         }
                     }
                     break;
                 }
-#endif // RELAY_MODE
 
                 default:
-                    // Non-beacon, non-AODV packet (or leaf receiving beacons — ignore)
                     break;
             }
 
-            // Resume listening after processing
             loraRadio.startReceive();
         }
 
@@ -726,7 +694,7 @@ void loop() {
         aodvRouter.tick();
     }
 
-    // ── OLED Update ──────────────────────────────────────────
+    // ── OLED Update (every 2 s) ───────────────────────────────
     static uint32_t lastDisplayUpdate = 0;
     if (millis() - lastDisplayUpdate > 2000) {
         lastDisplayUpdate = millis();
@@ -738,4 +706,39 @@ void loop() {
     }
 }
 
-#endif // GATEWAY_MODE
+
+// =============================================================
+// Arduino entry points
+// =============================================================
+
+void setup() {
+    Serial.begin(115200);
+    delay(1000);
+
+    // ── OLED must be ready before role-selection menu ────────
+    Wire.begin(OLED_SDA, OLED_SCL);
+    display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+
+    // ── 5-second boot menu: BOOT button cycles role ──────────
+    // Reads NVS default, lets user change it, saves and returns.
+    g_role = RoleConfig::selectRole(display);
+
+    Serial.printf("\n[Role] Booting as: %s\n\n", RoleConfig::roleName(g_role));
+
+    // ── Role-specific hardware init ──────────────────────────
+    if (g_role == NODE_ROLE_GATEWAY) {
+        initGateway();
+    } else {
+        initLeafRelay();   // handles both LEAF and RELAY
+    }
+}
+
+void loop() {
+    if (g_role == NODE_ROLE_GATEWAY) {
+        loopGateway();
+    } else {
+        loopLeafRelay();   // handles both LEAF and RELAY
+    }
+}
