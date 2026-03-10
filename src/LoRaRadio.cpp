@@ -37,13 +37,27 @@ bool LoRaRadio::begin() {
         return true;
     }
 
+    // ── Pin pre-configuration ─────────────────────────────────
     // Pull CS high before SPI init — prevents the SX1262 from latching
     // onto stray SPI traffic during bus setup.
     pinMode(LORA_CS, OUTPUT);
     digitalWrite(LORA_CS, HIGH);
 
-    // Initialize the dedicated SPI bus for LoRa.
-    // NOTE: Do NOT pass CS to SPI.begin() — on ESP32-S3 this enables
+    // BUSY pin must be input so RadioLib can read the SX1262 busy state.
+    pinMode(LORA_BUSY, INPUT);
+
+    // ── Manual hardware reset of SX1262 ──────────────────────
+    // RadioLib handles reset internally, but on ESP32-S3 the GPIO matrix
+    // state after boot can leave RST floating.  An explicit pulse ensures
+    // the SX1262 is in a known state before SPI communication starts.
+    pinMode(LORA_RST, OUTPUT);
+    digitalWrite(LORA_RST, LOW);
+    delay(10);                       // Hold low for 10 ms (datasheet min = 100 us)
+    digitalWrite(LORA_RST, HIGH);
+    delay(20);                       // Wait 20 ms for SX1262 to complete startup
+
+    // ── SPI bus init ─────────────────────────────────────────
+    // Do NOT pass CS to SPI.begin() — on ESP32-S3 this enables
     // hardware SS control which conflicts with RadioLib's software CS.
     _loraSPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI);
 
