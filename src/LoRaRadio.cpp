@@ -19,6 +19,7 @@
  */
 
 #include "LoRaRadio.h"
+#include "LoRaStatus.h"
 
 static const char* TAG = "LoRaRadio";
 
@@ -226,43 +227,194 @@ bool LoRaRadio::startReceive() {
         attachInterrupt(digitalPinToInterrupt(LORA_DIO1), _dio1ISR, RISING);
         uint8_t st = _rawGetStatus();
         uint8_t mode = (st >> 4) & 0x07;
+        log_i("%s: startReceive() RadioLib returned %d, status=0x%02X, mode=%u %s",
+              TAG, state, st, mode,
+              mode == 2 ? "(STBY_RC)" : mode == 3 ? "(STBY_XOSC)" :
+              mode == 4 ? "(FS)" : mode == 5 ? "(RX)" :
+              mode == 6 ? "(TX)" : "(UNKNOWN)");
         if (mode == 5) {
-            log_d("%s: Entered RX mode (RadioLib)", TAG);
             return true;
         }
         // Not in RX (stuck in FS on clone chips) — try raw SPI
+        log_i("%s: Not in RX — falling through to raw SPI fallback", TAG);
+    } else {
+        log_e("%s: startReceive() RadioLib error %d — trying raw SPI", TAG, state);
     }
 
-    // ── Raw SPI fallback ──────────────────────────────────────
-    uint8_t cmd_stby[] = {0x80, 0x00};
-    _rawSpiWrite(cmd_stby, sizeof(cmd_stby));
+    // ── Raw SPI fallback (full re-init for RX) ─────────────────
+    // The radio is stuck in FS mode — the PLL can't lock into RX.
+    // Re-issue TCXO, calibration, and frequency commands, then try
+    // multiple RX strategies (continuous, finite timeout, SetFs pre-warm).
 
-    uint8_t cmd_pkt[] = {0x8A, 0x01};   // SetPacketType(LoRa)
+    // 1. Go to STANDBY_XOSC (0x01) — ensures TCXO is active and stable
+    //    (STBY_RC can leave the TCXO off, causing PLL lock failure on clones)
+    uint8_t cmd_stby[] = {0x80, 0x01};
+    _rawSpiWrite(cmd_stby, sizeof(cmd_stby));
+    delay(5);
+
+    // 2. SetDio3AsTcxoCtrl — T3-S3 V1.2 uses TCXO via DIO3, 1.6V, 10ms timeout
+    //    Longer timeout (640 ticks = 10ms) for clone TCXO stabilization
+    uint8_t cmd_tcxo[] = {0x97, 0x00, 0x00, 0x02, 0x80};
+    _rawSpiWrite(cmd_tcxo, sizeof(cmd_tcxo));
+    delay(10);  // Let TCXO fully stabilize
+
+    // 3. Calibrate all blocks (RC64k, RC13M, PLL, ADC pulse, ADC bulk N/P, image)
+    uint8_t cmd_cal[] = {0x89, 0x7F};
+    _rawSpiWrite(cmd_cal, sizeof(cmd_cal));
+    delay(10);
+
+    // 4. CalibrateImage for 902-928 MHz band (ISM Singapore 923 MHz)
+    uint8_t cmd_calimg[] = {0x98, 0xE1, 0xE9};
+    _rawSpiWrite(cmd_calimg, sizeof(cmd_calimg));
+    delay(5);
+
+    // 5. SetRegulatorMode(DC-DC) — T3-S3 uses DC-DC, not LDO
+    uint8_t cmd_reg[] = {0x96, 0x01};
+    _rawSpiWrite(cmd_reg, sizeof(cmd_reg));
+
+    // 6. SetPacketType(LoRa)
+    uint8_t cmd_pkt[] = {0x8A, 0x01};
     _rawSpiWrite(cmd_pkt, sizeof(cmd_pkt));
 
-    uint8_t cmd_mod[] = {0x8B, 0x09, 0x04, 0x03, 0x00};  // SF9/BW125/CR4_7
+    // 7. SetRfFrequency — 923.0 MHz = 0x39B00000
+    uint8_t cmd_freq[] = {0x86, 0x39, 0xB0, 0x00, 0x00};
+    _rawSpiWrite(cmd_freq, sizeof(cmd_freq));
+
+    // 8. SetDio2AsRfSwitch(enable) — needed for T3-S3 RF path
+    uint8_t cmd_dio2[] = {0x9D, 0x01};
+    _rawSpiWrite(cmd_dio2, sizeof(cmd_dio2));
+
+    // 9. SetModulationParams(SF9, BW125, CR4/7, LDR off)
+    uint8_t cmd_mod[] = {0x8B, 0x09, 0x04, 0x03, 0x00};
     _rawSpiWrite(cmd_mod, sizeof(cmd_mod));
 
+    // 10. SetPacketParams(preamble=8, header=explicit, maxPayload=64, CRC on, no invert)
     uint8_t cmd_pktp[] = {0x8C, 0x00, 0x08, 0x00, 0x40, 0x01, 0x00};
     _rawSpiWrite(cmd_pktp, sizeof(cmd_pktp));
 
+    // 11. Set sync word to PRIVATE (0x1424) — registers 0x0740, 0x0741
+    uint8_t cmd_sw1[] = {0x0D, 0x07, 0x40, 0x14};
+    _rawSpiWrite(cmd_sw1, sizeof(cmd_sw1));
+    uint8_t cmd_sw2[] = {0x0D, 0x07, 0x41, 0x24};
+    _rawSpiWrite(cmd_sw2, sizeof(cmd_sw2));
+
+    // 12. ClearDeviceErrors + ClearIrqStatus
+    uint8_t cmd_clr_err[] = {0x07, 0x00, 0x00};
+    _rawSpiWrite(cmd_clr_err, sizeof(cmd_clr_err));
     uint8_t cmd_clr[] = {0x02, 0xFF, 0xFF};
     _rawSpiWrite(cmd_clr, sizeof(cmd_clr));
 
+    // 13. SetBufferBaseAddress(TX=0, RX=0)
     uint8_t cmd_buf[] = {0x8F, 0x00, 0x00};
     _rawSpiWrite(cmd_buf, sizeof(cmd_buf));
 
+    // 14. SetDioIrqParams — RxDone on DIO1
     uint8_t cmd_irq[] = {0x08, 0x02, 0x02, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00};
     _rawSpiWrite(cmd_irq, sizeof(cmd_irq));
 
     _dio1Fired = false;
     attachInterrupt(digitalPinToInterrupt(LORA_DIO1), _dio1ISR, RISING);
 
-    uint8_t cmd_rx[] = {0x82, 0xFF, 0xFF, 0xFF};
-    _rawSpiWrite(cmd_rx, sizeof(cmd_rx));
+    // Read device errors for diagnostics
+    uint8_t errH = _rawReadReg(0x0320);
+    uint8_t errL = _rawReadReg(0x0321);
+    uint16_t devErr = ((uint16_t)errH << 8) | errL;
+    log_i("%s: DeviceErrors=0x%04X before SetRx", TAG, devErr);
 
-    log_d("%s: RX mode set via raw SPI, status=0x%02X", TAG, _rawGetStatus());
-    return true;
+    // ── Strategy A: SetFs first to pre-warm PLL, then SetRx ─────
+    {
+        uint8_t cmd_fs[] = {0xC1};   // SetFs — force PLL lock in FS mode
+        _rawSpiWrite(cmd_fs, sizeof(cmd_fs));
+        delay(5);  // Let PLL lock in FS
+
+        uint8_t cmd_rx[] = {0x82, 0xFF, 0xFF, 0xFF};  // Continuous RX
+        _rawSpiWrite(cmd_rx, sizeof(cmd_rx));
+        delay(20);
+
+        uint8_t st = _rawGetStatus();
+        uint8_t mode = sx1262ExtractMode(st);
+        log_i("%s: Strategy A (SetFs+SetRx continuous), status=0x%02X, mode=%u %s",
+              TAG, st, mode, mode == SX1262_CHIPMODE_RX ? "(RX) OK" : "(NOT RX)");
+        if (evaluateStartReceiveResult(st)) return true;
+    }
+
+    // ── Strategy B: Finite RX timeout (clone workaround) ────────
+    // Some SX1262 clones can't handle continuous RX (0xFFFFFF) but
+    // accept a finite timeout.  Use ~10 s = 640000 ticks = 0x09C400
+    {
+        uint8_t cmd_clr2[] = {0x02, 0xFF, 0xFF};
+        _rawSpiWrite(cmd_clr2, sizeof(cmd_clr2));
+
+        uint8_t cmd_stby2[] = {0x80, 0x01};
+        _rawSpiWrite(cmd_stby2, sizeof(cmd_stby2));
+        delay(2);
+
+        uint8_t cmd_rx[] = {0x82, 0x09, 0xC4, 0x00};  // ~10 s timeout
+        _rawSpiWrite(cmd_rx, sizeof(cmd_rx));
+        delay(20);
+
+        uint8_t st = _rawGetStatus();
+        uint8_t mode = sx1262ExtractMode(st);
+        log_i("%s: Strategy B (SetRx finite 10s), status=0x%02X, mode=%u %s",
+              TAG, st, mode, mode == SX1262_CHIPMODE_RX ? "(RX) OK" : "(NOT RX)");
+        if (evaluateStartReceiveResult(st)) return true;
+    }
+
+    // ── Strategy C: RxDutyCycle — alternates sleep/RX ───────────
+    // SetRxDutyCycle(rxPeriod=0x01F400 ~2s, sleepPeriod=0x003200 ~0.8s)
+    {
+        uint8_t cmd_clr3[] = {0x02, 0xFF, 0xFF};
+        _rawSpiWrite(cmd_clr3, sizeof(cmd_clr3));
+
+        uint8_t cmd_stby3[] = {0x80, 0x01};
+        _rawSpiWrite(cmd_stby3, sizeof(cmd_stby3));
+        delay(2);
+
+        uint8_t cmd_dc[] = {0x94, 0x01, 0xF4, 0x00, 0x00, 0x32, 0x00};
+        _rawSpiWrite(cmd_dc, sizeof(cmd_dc));
+        delay(50);
+
+        uint8_t st = _rawGetStatus();
+        uint8_t mode = sx1262ExtractMode(st);
+        log_i("%s: Strategy C (RxDutyCycle), status=0x%02X, mode=%u %s",
+              TAG, st, mode, mode == SX1262_CHIPMODE_RX ? "(RX) OK" : "(NOT RX)");
+        if (evaluateStartReceiveResult(st)) return true;
+    }
+
+    // ── All strategies failed — hardware reset + reinit ─────────
+    log_w("%s: All RX strategies failed — attempting hardware reset", TAG);
+    _initialized = false;
+    _loraSPI.end();
+    delay(100);
+
+    if (begin()) {
+        int state = _radio.startReceive();
+        if (state == RADIOLIB_ERR_NONE || state == RADIOLIB_ERR_SPI_CMD_TIMEOUT) {
+            _dio1Fired = false;
+            attachInterrupt(digitalPinToInterrupt(LORA_DIO1), _dio1ISR, RISING);
+            uint8_t st = _rawGetStatus();
+            log_i("%s: After HW reset, status=0x%02X, mode=%u",
+                  TAG, st, sx1262ExtractMode(st));
+            if (evaluateStartReceiveResult(st)) {
+                return true;
+            }
+        }
+    }
+
+    log_e("%s: startReceive FAILED — radio not in RX mode", TAG);
+    return false;
+}
+
+uint8_t LoRaRadio::getStatus() {
+    if (!_initialized) return 0;
+    return _rawGetStatus();
+}
+
+uint16_t LoRaRadio::getIrqFlags() {
+    if (!_initialized) return 0;
+    uint8_t irqH = _rawReadReg(0x0044);
+    uint8_t irqL = _rawReadReg(0x0045);
+    return ((uint16_t)irqH << 8) | irqL;
 }
 
 bool LoRaRadio::checkReceive(LoRaRxResult& result) {

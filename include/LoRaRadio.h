@@ -120,6 +120,12 @@ public:
     /** Get last RSSI reading. */
     float lastRSSI() const { return _lastRSSI; }
 
+    /** Get raw SX1262 status byte (for diagnostics). */
+    uint8_t getStatus();
+
+    /** Get current IRQ flags (for diagnostics). */
+    uint16_t getIrqFlags();
+
 private:
     SPIClass      _loraSPI;
     SPISettings   _loraSPISettings;

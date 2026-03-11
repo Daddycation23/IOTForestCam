@@ -358,7 +358,9 @@ static void initGateway() {
         delay(1500);
     } else {
         _gwLoraReady = true;
-        loraRadio.startReceive();
+        if (!loraRadio.startReceive()) {
+            Serial.println("[WARN] LoRa startReceive failed — will retry in loop");
+        }
     }
 
     // ── AODV Router ──────────────────────────────────────────
@@ -510,7 +512,9 @@ static void initLeafRelay() {
         // Non-fatal: leaf/relay still serves CoAP for direct connections
     } else {
         _loraReady = true;
-        loraRadio.startReceive();
+        if (!loraRadio.startReceive()) {
+            Serial.println("[WARN] LoRa startReceive failed — will retry in loop");
+        }
         Serial.println("[OK] LoRa beacon TX + RX enabled (AODV routing)");
     }
 
@@ -541,6 +545,31 @@ static void initLeafRelay() {
 static void loopGateway() {
     // ── Poll for LoRa packets (dispatch by type) ────────────
     if (!_gwLoraReady) { delay(100); return; }   // No LoRa — nothing to do
+
+    // ── Periodic LoRa diagnostic + RX recovery (every 15 s) ───
+    static uint32_t lastDiag = 0;
+    if (millis() - lastDiag >= 15000) {
+        lastDiag = millis();
+        uint8_t st = loraRadio.getStatus();
+        uint8_t mode = (st >> 4) & 0x07;
+        uint16_t irq = loraRadio.getIrqFlags();
+        Serial.printf("[LoRa DIAG] status=0x%02X mode=%u(%s) IRQ=0x%04X DIO1=%d\n",
+                      st, mode,
+                      mode == 2 ? "STBY_RC" : mode == 3 ? "STBY_XOSC" :
+                      mode == 4 ? "FS" : mode == 5 ? "RX" :
+                      mode == 6 ? "TX" : "??",
+                      irq, digitalRead(LORA_DIO1));
+
+        // Auto-recover if radio dropped out of RX mode
+        if (mode != 5 && mode != 6) {
+            Serial.println("[LoRa] Radio not in RX — attempting recovery...");
+            if (loraRadio.startReceive()) {
+                Serial.println("[LoRa] RX recovery OK");
+            } else {
+                Serial.println("[LoRa] RX recovery FAILED");
+            }
+        }
+    }
 
     LoRaRxResult rx;
     if (loraRadio.checkReceive(rx)) {
@@ -710,6 +739,33 @@ static void loopLeafRelay() {
         if (millis() - _relayCachedStartMs >= RELAY_CACHED_TIMEOUT_MS) {
             Serial.println("[Relay] Cached serving timeout — cleaning up");
             relayCachedCleanup();
+        }
+    }
+
+    // ── Periodic LoRa diagnostic + RX recovery (every 15 s) ───
+    if (_loraReady) {
+        static uint32_t lastDiag = 0;
+        if (millis() - lastDiag >= 15000) {
+            lastDiag = millis();
+            uint8_t st = loraRadio.getStatus();
+            uint8_t mode = (st >> 4) & 0x07;
+            uint16_t irq = loraRadio.getIrqFlags();
+            Serial.printf("[LoRa DIAG] status=0x%02X mode=%u(%s) IRQ=0x%04X DIO1=%d\n",
+                          st, mode,
+                          mode == 2 ? "STBY_RC" : mode == 3 ? "STBY_XOSC" :
+                          mode == 4 ? "FS" : mode == 5 ? "RX" :
+                          mode == 6 ? "TX" : "??",
+                          irq, digitalRead(LORA_DIO1));
+
+            // Auto-recover if radio dropped out of RX mode
+            if (mode != 5 && mode != 6) {
+                Serial.println("[LoRa] Radio not in RX — attempting recovery...");
+                if (loraRadio.startReceive()) {
+                    Serial.println("[LoRa] RX recovery OK");
+                } else {
+                    Serial.println("[LoRa] RX recovery FAILED");
+                }
+            }
         }
     }
 
