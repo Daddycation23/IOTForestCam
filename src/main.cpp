@@ -11,7 +11,7 @@
  * Hardware: LILYGO T3-S3 V1.2
  *   - OLED:    SSD1306 128x64 (I2C: SDA=18, SCL=17)
  *   - SD Card: HSPI (MOSI=11, MISO=2, CLK=14, CS=13)
- *   - LoRa:    SX1262 FSPI (MOSI=6, MISO=3, SCK=5, CS=7, DIO1=33, BUSY=34, RST=8)
+ *   - LoRa:    SX1280 FSPI (MOSI=6, MISO=3, SCK=5, CS=7, DIO1=9, BUSY=36, RST=8, RXEN=21, TXEN=10)
  *   - BOOT:    GPIO 0 (active-low, used for role selection at boot)
  *
  * @author  CS Group 2
@@ -352,7 +352,7 @@ static void initGateway() {
     // ── LoRa ─────────────────────────────────────────────────
     displayStatus("LoRa Init...");
     if (!loraRadio.begin()) {
-        Serial.println("[WARN] LoRa SX1262 init failed — gateway running without LoRa");
+        Serial.println("[WARN] LoRa SX1280 init failed — gateway running without LoRa");
         Serial.println("       (No beacon RX / AODV — WiFi-only harvest still possible)");
         displayStatus("LoRa FAILED (warn)");
         delay(1500);
