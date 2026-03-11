@@ -112,6 +112,22 @@ void NodeRegistry::resetHarvestFlags() {
     }
 }
 
+void NodeRegistry::reset() {
+    for (uint8_t i = 0; i < REGISTRY_MAX_NODES; i++) {
+        _nodes[i].active     = false;
+        _nodes[i].harvested  = false;
+        _nodes[i].routeKnown = false;
+        _nodes[i].hopCount   = 0;
+        _nodes[i].imageCount = 0;
+        _nodes[i].rssi       = -999.0f;
+        _nodes[i].lastSeenMs = 0;
+        memset(_nodes[i].nodeId, 0, 6);
+        memset(_nodes[i].nextHopId, 0, 6);
+        memset(_nodes[i].ssid, 0, sizeof(_nodes[i].ssid));
+    }
+    Serial.println("[Registry] Reset — all slots cleared");
+}
+
 bool NodeRegistry::getNextToHarvest(NodeEntry& entry) {
     int8_t bestIdx = -1;
     float  bestRSSI = -999.0f;

@@ -47,6 +47,7 @@
 
 // ── Dynamic role selection ───────────────────────────────────
 #include "RoleConfig.h"
+#include "ElectionManager.h"
 
 // ─── LILYGO T3-S3 V1.2 Pin Definitions ──────────────────────
 #define OLED_SDA 18
@@ -55,6 +56,9 @@
 // ─── Runtime role ─────────────────────────────────────────────
 /// Set once in setup() by RoleConfig::selectRole(); never modified after that.
 NodeRole g_role = NODE_ROLE_LEAF;
+/// Runtime role — may differ from g_role when a relay promotes to gateway.
+/// Checked every loop() iteration to select loopGateway() vs loopLeafRelay().
+NodeRole _activeRole = NODE_ROLE_LEAF;
 
 // ─── Shared hardware ──────────────────────────────────────────
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
@@ -75,6 +79,9 @@ static SPIClass gwSPI(HSPI);
 NodeRegistry registry;
 CoapClient   coapClient;
 HarvestLoop  harvestLoop(registry, coapClient);
+// ─── Election manager ────────────────────────────────────────
+// MUST be after registry, harvestLoop, aodvRouter — C++ file-scope init order
+ElectionManager electionMgr(loraRadio, registry, harvestLoop, aodvRouter);
 
 // ─── Leaf / Relay objects ─────────────────────────────────────
 // CoapServer stores StorageReader& so storage must come first.
@@ -370,6 +377,25 @@ static void initGateway() {
         aodvRouter.begin(myMac);
         aodvRouter.setRouteDiscoveredCallback(onRouteDiscovered);
         harvestLoop.setAodv(&aodvRouter, &loraRadio);
+        electionMgr.begin(myMac, NODE_ROLE_GATEWAY);
+    }
+
+    // ── Broadcast GW_RECLAIM to reclaim from any promoted relay ──
+    if (_gwLoraReady) {
+        Serial.println("[GW] Broadcasting GW_RECLAIM...");
+        ElectionPacket reclaim;
+        reclaim.type = PKT_TYPE_GW_RECLAIM;
+        memcpy(reclaim.senderId, myMac, 6);
+        reclaim.priority = ElectionPacket::macToPriority(myMac);
+        reclaim.electionId = 0;
+
+        uint8_t buf[ELECTION_PACKET_SIZE];
+        uint8_t len = reclaim.serialize(buf, sizeof(buf));
+        for (uint8_t i = 0; i < GW_RECLAIM_TX_REPEAT; i++) {
+            if (len > 0) loraRadio.send(buf, len);
+            delay(GW_RECLAIM_TX_GAP_MS);
+        }
+        loraRadio.startReceive();
     }
 
     // ── WiFi STA (connect only during harvest) ───────────────
@@ -521,6 +547,7 @@ static void initLeafRelay() {
     // ── AODV Router ──────────────────────────────────────────
     if (_loraReady) {
         aodvRouter.begin(mac);
+        electionMgr.begin(mac, g_role);
     }
 
     // ── OLED ready screen ────────────────────────────────────
@@ -544,7 +571,7 @@ static void initLeafRelay() {
 
 static void loopGateway() {
     // ── Poll for LoRa packets (dispatch by type) ────────────
-    if (!_gwLoraReady) { delay(100); return; }   // No LoRa — nothing to do
+    if (!_gwLoraReady && !_loraReady) { delay(100); return; }   // No LoRa — nothing to do
 
     // ── Periodic LoRa diagnostic + RX recovery (every 15 s) ───
     static uint32_t lastDiag = 0;
@@ -571,6 +598,34 @@ static void loopGateway() {
         }
     }
 
+    // ── Gateway beacon TX (for election liveness detection) ──
+    static uint32_t lastGwBeacon = 0;
+    static uint32_t gwBeaconInterval = BEACON_INTERVAL_MS;
+    if (millis() - lastGwBeacon >= gwBeaconInterval) {
+        BeaconPacket gwBeacon;
+        gwBeacon.packetType = BEACON_TYPE_BEACON;
+        gwBeacon.ttl = 2;
+        WiFi.macAddress(gwBeacon.nodeId);
+        gwBeacon.nodeRole   = NODE_ROLE_GATEWAY;
+        gwBeacon.ssidLen    = 0;
+        gwBeacon.ssid[0]    = '\0';
+        gwBeacon.imageCount = 0;
+        gwBeacon.batteryPct = 0xFF;  // USB powered
+        gwBeacon.uptimeMin  = (uint16_t)(millis() / 60000);
+
+        uint8_t buf[BEACON_MAX_SIZE];
+        uint8_t len = gwBeacon.serialize(buf, sizeof(buf));
+        if (len > 0) {
+            loraRadio.send(buf, len);
+            loraRadio.startReceive();
+            Serial.println("[GW] Beacon TX (liveness)");
+        }
+
+        lastGwBeacon = millis();
+        gwBeaconInterval = BEACON_INTERVAL_MS
+                         + random(-(int32_t)BEACON_JITTER_MS, (int32_t)BEACON_JITTER_MS);
+    }
+
     LoRaRxResult rx;
     if (loraRadio.checkReceive(rx)) {
         uint8_t pktType = getLoRaPacketType(rx.data, rx.length);
@@ -581,6 +636,7 @@ static void loopGateway() {
                 BeaconPacket beacon;
                 if (beacon.parse(rx.data, rx.length)) {
                     registry.update(beacon, rx.rssi);
+                    electionMgr.onBeacon(beacon);   // Let election manager detect GW recovery
 
                     char idStr[24];
                     beacon.nodeIdToString(idStr, sizeof(idStr));
@@ -622,6 +678,12 @@ static void loopGateway() {
                 }
                 break;
             }
+            case PKT_TYPE_ELECTION:
+            case PKT_TYPE_SUPPRESS:
+            case PKT_TYPE_COORDINATOR:
+            case PKT_TYPE_GW_RECLAIM:
+                electionMgr.onElectionPacket(rx.data, rx.length);
+                break;
             default:
                 log_d("Unknown LoRa packet type 0x%02X (%u bytes)", pktType, rx.length);
                 break;
@@ -816,11 +878,20 @@ static void loopLeafRelay() {
                 case BEACON_TYPE_BEACON:
                 case BEACON_TYPE_BEACON_RELAY: {
                     // Relay only: re-broadcast other nodes' beacons
-                    if (g_role == NODE_ROLE_RELAY) {
+                    if (g_role == NODE_ROLE_RELAY || electionMgr.isPromoted()) {
                         BeaconPacket received;
                         if (received.parse(rx.data, rx.length)) {
                             uint8_t myMac[6];
                             WiFi.macAddress(myMac);
+
+                            // Feed gateway beacons to election manager
+                            if (received.nodeRole == NODE_ROLE_GATEWAY) {
+                                electionMgr.onBeacon(received);
+                            }
+                            // If acting as gateway, also update registry
+                            if (electionMgr.isPromoted()) {
+                                registry.update(received, rx.rssi);
+                            }
 
                             if (memcmp(received.nodeId, myMac, 6) != 0 && received.ttl > 1) {
                                 received.ttl--;
@@ -884,6 +955,13 @@ static void loopLeafRelay() {
                     break;
                 }
 
+                case PKT_TYPE_ELECTION:
+                case PKT_TYPE_SUPPRESS:
+                case PKT_TYPE_COORDINATOR:
+                case PKT_TYPE_GW_RECLAIM:
+                    electionMgr.onElectionPacket(rx.data, rx.length);
+                    break;
+
                 default:
                     break;
             }
@@ -916,6 +994,26 @@ static void loopLeafRelay() {
             display.setCursor(0, 56);
             display.printf("Reqs:%-4lu Blks:%-5lu",
                            coapServer.requestCount(), coapServer.blocksSent());
+        }
+
+        // Show election state on OLED if not idle
+        ElectionState es = electionMgr.state();
+        if (es == ELECT_ELECTION_START || es == ELECT_WAITING) {
+            display.fillRect(0, 40, 128, 8, SSD1306_BLACK);
+            display.setCursor(0, 40);
+            display.println("ELECTING...");
+        } else if (es == ELECT_ACTING_GATEWAY || es == ELECT_PROMOTED) {
+            display.fillRect(0, 0, 128, 8, SSD1306_BLACK);
+            display.setCursor(0, 0);
+            display.println("ACTING GW");
+        } else if (es == ELECT_STOOD_DOWN) {
+            display.fillRect(0, 40, 128, 8, SSD1306_BLACK);
+            display.setCursor(0, 40);
+            display.println("ELECTION LOST");
+        } else if (es == ELECT_RECLAIMED) {
+            display.fillRect(0, 40, 128, 8, SSD1306_BLACK);
+            display.setCursor(0, 40);
+            display.println("RECLAIMED -> RELAY");
         }
 
         display.display();
@@ -983,12 +1081,21 @@ void setup() {
     } else {
         initLeafRelay();   // handles both LEAF and RELAY
     }
+
+    _activeRole = g_role;
 }
 
 void loop() {
-    if (g_role == NODE_ROLE_GATEWAY) {
+    // Update active role from election manager
+    _activeRole = electionMgr.activeRole();
+
+    if (_activeRole == NODE_ROLE_GATEWAY) {
         loopGateway();
     } else {
-        loopLeafRelay();   // handles both LEAF and RELAY
+        loopLeafRelay();
     }
+
+    // Election state machine runs AFTER the loop body, regardless of role.
+    // tick() has an internal guard: no-op unless _originalRole == NODE_ROLE_RELAY.
+    electionMgr.tick();
 }

@@ -31,6 +31,12 @@ static constexpr uint8_t PKT_TYPE_RERR        = 0x12;
 static constexpr uint8_t PKT_TYPE_HARVEST_CMD = 0x20;
 static constexpr uint8_t PKT_TYPE_HARVEST_ACK = 0x21;
 
+// ─── Election Packet Type Codes ──────────────────────────────
+static constexpr uint8_t PKT_TYPE_ELECTION    = 0x30;
+static constexpr uint8_t PKT_TYPE_SUPPRESS    = 0x31;
+static constexpr uint8_t PKT_TYPE_COORDINATOR = 0x32;
+static constexpr uint8_t PKT_TYPE_GW_RECLAIM  = 0x33;
+
 // ─── RERR limits ──────────────────────────────────────────────
 static constexpr uint8_t RERR_MAX_DESTS = 6;   // Max unreachable destinations per RERR
 

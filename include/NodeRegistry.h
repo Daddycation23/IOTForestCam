@@ -92,6 +92,12 @@ public:
     uint8_t activeCount() const;
 
     /**
+     * Reset the entire registry — marks all slots inactive and zeroes fields.
+     * Used when a promoted relay steps back down to relay role.
+     */
+    void reset();
+
+    /**
      * Get node entry by index (for OLED display).
      * @param index  0-based slot index (0 .. REGISTRY_MAX_NODES-1).
      * @param[out] entry  Populated if slot is active.

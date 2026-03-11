@@ -62,6 +62,14 @@ void HarvestLoop::onHarvestAck(const HarvestAckPacket& ack) {
     }
 }
 
+void HarvestLoop::abortCycle() {
+    if (_state == HARVEST_IDLE) return;
+
+    Serial.println("[Harvest] Aborting cycle — returning to IDLE");
+    _stats.nodesFailed++;
+    _enterState(HARVEST_IDLE);
+}
+
 void HarvestLoop::tick() {
     switch (_state) {
         case HARVEST_IDLE:

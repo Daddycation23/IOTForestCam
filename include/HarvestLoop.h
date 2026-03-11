@@ -113,6 +113,13 @@ public:
     /** Get human-readable state name for OLED/Serial. */
     const char* stateStr() const;
 
+    /**
+     * Abort any in-progress harvest cycle.
+     * Marks remaining nodes as failed and transitions to IDLE.
+     * Used when a promoted relay is reclaimed by the original gateway.
+     */
+    void abortCycle();
+
     /** Get the SSID of the node currently being harvested. */
     const char* currentNodeSSID() const { return _currentNode.ssid; }
 
