@@ -121,9 +121,9 @@ const char* HarvestLoop::stateStr() const {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 void HarvestLoop::_enterState(HarvestState newState) {
-    log_d("%s: %s -> %s", TAG, stateStr(),
-          [&]() { _state = newState; return stateStr(); }());
+    _state = newState;
     _stateEnteredMs = millis();
+    log_d("%s: -> %s", TAG, stateStr());
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -177,6 +177,13 @@ void HarvestLoop::_doRouteDiscovery() {
 
 void HarvestLoop::_doDisconnect() {
     _coapClient.stop();
+
+    // Put LoRa into standby to reduce power draw before WiFi activates.
+    // This prevents brownout crashes when WiFi + LoRa RX + SD are all active.
+    if (_loraRadio) {
+        _loraRadio->standby();
+    }
+
     WiFi.disconnect(true);
     WiFi.mode(WIFI_STA);
     delay(500);
@@ -525,6 +532,11 @@ void HarvestLoop::_doDone() {
 
     _coapClient.stop();
     WiFi.disconnect(true);
+
+    // Restart LoRa RX for beacon listening after harvest
+    if (_loraRadio) {
+        _loraRadio->startReceive();
+    }
 
     Serial.println("\n╔══════════════════════════════════════╗");
     Serial.println("║     HARVEST CYCLE COMPLETE           ║");

@@ -231,3 +231,10 @@ uint16_t LoRaRadio::getIrqFlags() {
     if (!_initialized) return 0;
     return _radio.getIrqStatus();
 }
+
+void LoRaRadio::standby() {
+    if (!_initialized) return;
+    detachInterrupt(digitalPinToInterrupt(LORA_DIO1));
+    _radio.standby();
+    log_i("%s: Radio in standby (low power)", TAG);
+}

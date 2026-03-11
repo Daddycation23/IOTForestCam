@@ -134,6 +134,9 @@ public:
     /** Get current IRQ flags (for diagnostics). */
     uint16_t getIrqFlags();
 
+    /** Put radio into low-power standby (RC oscillator). Call before WiFi. */
+    void standby();
+
 private:
     SPIClass      _loraSPI;
     SPISettings   _loraSPISettings;
