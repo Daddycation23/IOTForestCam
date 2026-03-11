@@ -20,8 +20,10 @@ static const char* TAG = "StorageReader";
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Constructor
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-StorageReader::StorageReader()
-    : _mounted(false)
+StorageReader::StorageReader(const char* imageDir)
+    : _imageDir(imageDir)
+    , _mounted(false)
+    , _mountedExternally(false)
     , _imageCount(0)
     , _currentIndex(0xFF)
     , _currentBlock(0)
@@ -40,17 +42,38 @@ bool StorageReader::begin() {
         return true;
     }
 
-    // Set CS pin high before init
+    // Power-cycle the SD card by driving CS and all SPI lines LOW briefly.
+    // This fully resets the card's internal state machine after a brownout
+    // or crash — a simple CS toggle is not always enough.
     pinMode(VSENSOR_SD_CS, OUTPUT);
+    pinMode(VSENSOR_SD_CLK, OUTPUT);
+    pinMode(VSENSOR_SD_MOSI, OUTPUT);
+    digitalWrite(VSENSOR_SD_CS, LOW);
+    digitalWrite(VSENSOR_SD_CLK, LOW);
+    digitalWrite(VSENSOR_SD_MOSI, LOW);
+    delay(200);   // Hold lines low to drain any residual charge
     digitalWrite(VSENSOR_SD_CS, HIGH);
-    delay(100);
+    delay(300);   // Let card's internal regulator stabilise
 
     // Initialise HSPI bus for LILYGO T3-S3 V1.2:
     //   SCK=14, MISO=2, MOSI=11, CS=13
     sdSPI.begin(VSENSOR_SD_CLK, VSENSOR_SD_MISO, VSENSOR_SD_MOSI, VSENSOR_SD_CS);
 
-    if (!SD.begin(VSENSOR_SD_CS, sdSPI, 400000)) {  // Start slow at 400kHz
-        log_e("%s: SD mount FAILED — check wiring / card format (FAT32)", TAG);
+    // Retry up to 5 times with increasing delays — SD cards can need
+    // extra time to recover after a brownout/crash reset.
+    bool sdOk = false;
+    for (int attempt = 1; attempt <= 5; attempt++) {
+        if (SD.begin(VSENSOR_SD_CS, sdSPI, 400000)) {  // Start slow at 400kHz
+            sdOk = true;
+            break;
+        }
+        log_w("%s: SD mount attempt %d/5 failed — retrying...", TAG, attempt);
+        SD.end();
+        delay(200 * attempt);   // 200, 400, 600, 800, 1000 ms backoff
+    }
+
+    if (!sdOk) {
+        log_e("%s: SD mount FAILED after 5 attempts — check wiring / card format (FAT32)", TAG);
         sdSPI.end();
         return false;
     }
@@ -78,8 +101,36 @@ bool StorageReader::begin() {
         return false;
     }
 
-    log_i("%s: Found %u image(s) in %s", TAG, _imageCount, VSENSOR_IMAGE_DIR);
+    log_i("%s: Found %u image(s) in %s", TAG, _imageCount, _imageDir);
     return true;
+}
+
+bool StorageReader::beginScanOnly() {
+    if (_mounted) {
+        log_w("%s: Already mounted — call endScanOnly() first to rescan", TAG);
+        return true;
+    }
+
+    _mounted           = true;
+    _mountedExternally = true;
+
+    if (!_scanDirectory()) {
+        log_e("%s: Scan of %s failed or no images found", TAG, _imageDir);
+        _mounted           = false;
+        _mountedExternally = false;
+        return false;
+    }
+
+    log_i("%s: Scan-only — found %u image(s) in %s", TAG, _imageCount, _imageDir);
+    return true;
+}
+
+void StorageReader::endScanOnly() {
+    closeImage();
+    _mounted           = false;
+    _mountedExternally = false;
+    _imageCount        = 0;
+    log_i("%s: Scan-only cleanup complete (SD remains mounted)", TAG);
 }
 
 void StorageReader::end() {
@@ -217,9 +268,9 @@ uint16_t StorageReader::computeChecksum(uint8_t index) {
 bool StorageReader::_scanDirectory() {
     _imageCount = 0;
 
-    File dir = SD.open(VSENSOR_IMAGE_DIR);
+    File dir = SD.open(_imageDir);
     if (!dir || !dir.isDirectory()) {
-        log_e("%s: Cannot open directory %s", TAG, VSENSOR_IMAGE_DIR);
+        log_e("%s: Cannot open directory %s", TAG, _imageDir);
         return false;
     }
 
@@ -245,7 +296,7 @@ bool StorageReader::_scanDirectory() {
         // Populate catalogue entry
         ImageInfo& img = _catalogue[_imageCount];
         snprintf(img.filename, sizeof(img.filename), "%s/%s",
-                 VSENSOR_IMAGE_DIR, name);
+                 _imageDir, name);
         img.fileSize    = entry.size();
         img.totalBlocks = (img.fileSize + VSENSOR_BLOCK_SIZE - 1) / VSENSOR_BLOCK_SIZE;
         entry.close();

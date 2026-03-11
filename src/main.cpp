@@ -25,6 +25,9 @@
 #include <SD.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <esp_system.h>
+#include "soc/soc.h"
+#include "soc/rtc_cntl_reg.h"
 
 // ── LoRa + AODV (all roles) ──────────────────────────────────
 #include "LoRaRadio.h"
@@ -75,22 +78,40 @@ HarvestLoop  harvestLoop(registry, coapClient);
 
 // ─── Leaf / Relay objects ─────────────────────────────────────
 // CoapServer stores StorageReader& so storage must come first.
-StorageReader storage;
+StorageReader storage;                        // Leaf: serves /images/
 CoapServer    coapServer(storage);
+
+// ─── Relay cached-image objects ─────────────────────────────
+// After relay harvest, cached images go to /cached/ on SD.
+// These objects let the relay serve those files to the gateway.
+StorageReader cachedStorage("/cached");        // Relay: indexes /cached/
+CoapServer    cachedCoapServer(cachedStorage); // Relay: serves /cached/ via CoAP
 
 // ─── Leaf / Relay state ───────────────────────────────────────
 static const char* AP_SSID_PREFIX = "ForestCam";
 static const char* AP_PASS        = "forestcam123";
 static char _apSSID[32];
 
-static bool    _loraReady  = false;
-static bool    _relayBusy  = false;
-static uint8_t _relayCmdId = 0;
+static bool    _loraReady    = false;
+static bool    _gwLoraReady  = false;   // Gateway LoRa status (set in initGateway)
+static bool    _relayBusy    = false;
+static uint8_t _relayCmdId   = 0;
+
+// ─── Relay cached-image serving state ────────────────────────
+static bool     _relayCachedServing  = false;   // Currently serving cached images?
+static uint32_t _relayCachedStartMs  = 0;       // When we started serving
+static constexpr uint32_t RELAY_CACHED_TIMEOUT_MS = 120000;  // Auto-cleanup after 2 min
 
 // ─── Gateway timing ───────────────────────────────────────────
 static constexpr uint32_t HARVEST_LISTEN_PERIOD_MS = 60000;  // Listen 60 s before harvest
 static constexpr uint32_t ROUTE_DISCOVERY_DELAY_MS = 15000;  // RREQ 15 s after boot
 
+
+// =============================================================
+// Forward declarations
+// =============================================================
+static const char* getResetReasonStr();
+static bool wasCleanBoot();
 
 // =============================================================
 // Shared helpers
@@ -102,6 +123,44 @@ void displayStatus(const char* line) {
     display.println("IOT Forest Cam");
     display.println(line);
     display.display();
+}
+
+// =============================================================
+// Relay cached-image cleanup
+// =============================================================
+
+/**
+ * Clean up after the gateway has downloaded (or timed out downloading)
+ * cached images from the relay.  Deletes /cached/ files, stops the
+ * CoAP server serving them, and frees the relay for the next harvest.
+ */
+static void relayCachedCleanup() {
+    Serial.println("[Relay] Cleaning up cached images...");
+
+    // Guard first — prevent any re-entry from loopLeafRelay()
+    _relayCachedServing = false;
+
+    // Stop serving
+    cachedCoapServer.stop();
+    cachedStorage.endScanOnly();
+
+    // Delete all files in /cached/
+    File dir = SD.open("/cached");
+    if (dir && dir.isDirectory()) {
+        File entry = dir.openNextFile();
+        while (entry) {
+            char path[64];
+            snprintf(path, sizeof(path), "/cached/%s", entry.name());
+            entry.close();
+            SD.remove(path);
+            Serial.printf("[Relay]   Deleted %s\n", path);
+            entry = dir.openNextFile();
+        }
+        dir.close();
+    }
+
+    _relayBusy = false;
+    Serial.println("[Relay] Cached image cleanup complete — ready for next harvest\n");
 }
 
 // =============================================================
@@ -239,6 +298,28 @@ static void relayHarvest(const HarvestCmdPacket& cmd) {
         loraRadio.startReceive();
     }
 
+    // ── Start serving cached images for the gateway ─────────
+    // The gateway will connect to our AP and download via CoAP.
+    // _relayBusy stays true until cached serving completes.
+    if (ack.status == HARVEST_STATUS_OK && ack.imageCount > 0) {
+        if (cachedStorage.beginScanOnly()) {
+            if (cachedCoapServer.begin()) {
+                _relayCachedServing = true;
+                _relayCachedStartMs = millis();
+                Serial.printf("[Relay] Serving %u cached image(s) via CoAP — "
+                              "gateway can connect to %s\n",
+                              cachedStorage.imageCount(), _apSSID);
+                Serial.println("[Relay] Harvest command complete — waiting for gateway download\n");
+                return;  // _relayBusy stays true
+            } else {
+                Serial.println("[Relay] Failed to start cached CoAP server");
+                cachedStorage.endScanOnly();
+            }
+        } else {
+            Serial.println("[Relay] Failed to scan /cached/ directory");
+        }
+    }
+
     _relayBusy = false;
     Serial.println("[Relay] Harvest command complete\n");
 }
@@ -271,18 +352,23 @@ static void initGateway() {
     // ── LoRa ─────────────────────────────────────────────────
     displayStatus("LoRa Init...");
     if (!loraRadio.begin()) {
-        displayStatus("LoRa FAILED!");
-        Serial.println("[ERROR] LoRa SX1262 init failed — check wiring");
-        while (true) delay(1000);
+        Serial.println("[WARN] LoRa SX1262 init failed — gateway running without LoRa");
+        Serial.println("       (No beacon RX / AODV — WiFi-only harvest still possible)");
+        displayStatus("LoRa FAILED (warn)");
+        delay(1500);
+    } else {
+        _gwLoraReady = true;
+        loraRadio.startReceive();
     }
-    loraRadio.startReceive();
 
     // ── AODV Router ──────────────────────────────────────────
     uint8_t myMac[6];
     WiFi.macAddress(myMac);
-    aodvRouter.begin(myMac);
-    aodvRouter.setRouteDiscoveredCallback(onRouteDiscovered);
-    harvestLoop.setAodv(&aodvRouter, &loraRadio);
+    if (_gwLoraReady) {
+        aodvRouter.begin(myMac);
+        aodvRouter.setRouteDiscoveredCallback(onRouteDiscovered);
+        harvestLoop.setAodv(&aodvRouter, &loraRadio);
+    }
 
     // ── WiFi STA (connect only during harvest) ───────────────
     WiFi.mode(WIFI_STA);
@@ -318,26 +404,61 @@ static void initLeafRelay() {
     }
 
     // ── SD Card (images stored in /images/) ──────────────────
-    displayStatus("Mounting SD...");
-    if (!storage.begin()) {
-        displayStatus("SD Mount FAILED!");
-        Serial.println("[ERROR] SD card mount failed. Check wiring and /images/ folder.");
-        while (true) delay(1000);
-    }
+    bool _sdReady = false;
 
-    Serial.printf("[OK] SD card: %d image(s) found\n", storage.imageCount());
+    if (g_role == NODE_ROLE_RELAY) {
+        // Mount SD for relay — needed for store-and-forward image caching.
+        // Uses gwSPI (same pattern as gateway) since the relay's StorageReader
+        // is not used for /images/ scanning.
+        displayStatus("Mounting SD...");
+        pinMode(VSENSOR_SD_CS, OUTPUT);
+        digitalWrite(VSENSOR_SD_CS, HIGH);
+        delay(100);
+        gwSPI.begin(VSENSOR_SD_CLK, VSENSOR_SD_MISO, VSENSOR_SD_MOSI, VSENSOR_SD_CS);
 
-    if (storage.imageCount() == 0) {
-        displayStatus("No images on SD!");
-        Serial.println("[ERROR] No JPEG files in /images/ directory.");
-        while (true) delay(1000);
-    }
+        if (!SD.begin(VSENSOR_SD_CS, gwSPI, 4000000)) {
+            Serial.println("[WARN] SD card not available — relay harvest will be disabled");
+        } else {
+            _sdReady = true;
+            SD.mkdir("/cached");
+            Serial.println("[OK] SD card mounted for relay caching");
+        }
+    } else {
+        displayStatus("Mounting SD...");
 
-    for (uint8_t i = 0; i < storage.imageCount(); i++) {
-        ImageInfo info;
-        if (storage.getImageInfo(i, info)) {
-            Serial.printf("  [%u] %s — %lu bytes (%lu blocks)\n",
-                          i, info.filename, info.fileSize, info.totalBlocks);
+        // After a brownout/crash the SD card may need extra time to recover.
+        // Toggle CS pin to reset the card's SPI state machine.
+        if (!wasCleanBoot()) {
+            Serial.println("[SD] Non-clean reset — power-cycling SD CS pin");
+            pinMode(VSENSOR_SD_CS, OUTPUT);
+            digitalWrite(VSENSOR_SD_CS, LOW);
+            delay(100);
+            digitalWrite(VSENSOR_SD_CS, HIGH);
+            delay(500);
+        }
+
+        if (!storage.begin()) {
+            displayStatus("SD FAILED - no CoAP");
+            Serial.println("[WARN] SD card mount failed. CoAP server will not start.");
+            Serial.println("       Check: SD card inserted? FAT32? /images/ folder with .jpg files?");
+            // Continue without CoAP — don't hang the board
+        } else {
+            _sdReady = true;
+            Serial.printf("[OK] SD card: %d image(s) found\n", storage.imageCount());
+
+            if (storage.imageCount() == 0) {
+                displayStatus("No images on SD!");
+                Serial.println("[WARN] No JPEG files in /images/ directory. CoAP server will not start.");
+                _sdReady = false;
+            }
+
+            for (uint8_t i = 0; i < storage.imageCount(); i++) {
+                ImageInfo info;
+                if (storage.getImageInfo(i, info)) {
+                    Serial.printf("  [%u] %s — %lu bytes (%lu blocks)\n",
+                                  i, info.filename, info.fileSize, info.totalBlocks);
+                }
+            }
         }
     }
 
@@ -353,25 +474,34 @@ static void initLeafRelay() {
     WiFi.softAP(_apSSID, AP_PASS);
     delay(100);
 
+    // Lower TX power to reduce current spikes that cause brownout resets
+    // when WiFi + SD card are active simultaneously.
+    // WIFI_POWER_8_5dBm is plenty for close-range laptop testing.
+    WiFi.setTxPower(WIFI_POWER_8_5dBm);
+
     IPAddress ip = WiFi.softAPIP();
     Serial.printf("[OK] WiFi AP: %s (pass: %s)\n", _apSSID, AP_PASS);
     Serial.printf("[OK] IP: %s\n", ip.toString().c_str());
 
-    // ── CoAP Server ──────────────────────────────────────────
-    if (!coapServer.begin()) {
-        displayStatus("CoAP FAILED!");
-        Serial.println("[ERROR] CoAP server failed to start.");
-        while (true) delay(1000);
-    }
+    // ── CoAP Server (leaf only — relay uses cachedCoapServer on demand) ──
+    if (_sdReady && g_role != NODE_ROLE_RELAY) {
+        if (!coapServer.begin()) {
+            displayStatus("CoAP FAILED!");
+            Serial.println("[ERROR] CoAP server failed to start.");
+            while (true) delay(1000);
+        }
 
-    Serial.printf("[OK] CoAP server on port %u\n", COAP_DEFAULT_PORT);
-    Serial.println();
-    Serial.println("Resources:");
-    Serial.println("  GET /info             — Image catalogue (JSON)");
-    Serial.println("  GET /image/{n}        — Image via Block2 transfer");
-    Serial.println("  GET /checksum/{n}     — Fletcher-16 checksum (JSON)");
-    Serial.println("  GET /.well-known/core — Resource discovery");
-    Serial.println();
+        Serial.printf("[OK] CoAP server on port %u\n", COAP_DEFAULT_PORT);
+        Serial.println();
+        Serial.println("Resources:");
+        Serial.println("  GET /info             — Image catalogue (JSON)");
+        Serial.println("  GET /image/{n}        — Image via Block2 transfer");
+        Serial.println("  GET /checksum/{n}     — Fletcher-16 checksum (JSON)");
+        Serial.println("  GET /.well-known/core — Resource discovery");
+        Serial.println();
+    } else {
+        Serial.println("[WARN] CoAP server skipped — no SD card available");
+    }
 
     // ── LoRa ─────────────────────────────────────────────────
     displayStatus("LoRa Init...");
@@ -395,9 +525,9 @@ static void initLeafRelay() {
     display.println(g_role == NODE_ROLE_RELAY ? "Relay (AODV)" : "Leaf (AODV)");
     display.printf("AP: %s\n", _apSSID);
     display.printf("IP: %s\n", ip.toString().c_str());
-    display.printf("CoAP: :%u\n", COAP_DEFAULT_PORT);
+    display.printf("CoAP: %s\n", _sdReady ? ":5683" : "OFF");
     display.printf("Imgs: %d  LoRa:%s\n",
-                   storage.imageCount(), _loraReady ? "OK" : "NO");
+                   _sdReady ? storage.imageCount() : 0, _loraReady ? "OK" : "NO");
     display.println("────────────────────");
     display.println("Reqs: 0  Blks: 0");
     display.display();
@@ -410,6 +540,8 @@ static void initLeafRelay() {
 
 static void loopGateway() {
     // ── Poll for LoRa packets (dispatch by type) ────────────
+    if (!_gwLoraReady) { delay(100); return; }   // No LoRa — nothing to do
+
     LoRaRxResult rx;
     if (loraRadio.checkReceive(rx)) {
         uint8_t pktType = getLoRaPacketType(rx.data, rx.length);
@@ -567,8 +699,19 @@ static void loopGateway() {
 }
 
 static void loopLeafRelay() {
-    // ── CoAP Server ──────────────────────────────────────────
+    // ── CoAP Server (leaf serves /images/) ───────────────────
     coapServer.loop();
+
+    // ── Relay: serve cached images to gateway ────────────────
+    if (_relayCachedServing) {
+        cachedCoapServer.loop();
+
+        // Auto-cleanup after timeout (gateway should be done by now)
+        if (millis() - _relayCachedStartMs >= RELAY_CACHED_TIMEOUT_MS) {
+            Serial.println("[Relay] Cached serving timeout — cleaning up");
+            relayCachedCleanup();
+        }
+    }
 
     // ── LoRa Beacon Broadcast (every ~30 s with jitter) ──────
     if (_loraReady) {
@@ -589,7 +732,9 @@ static void loopLeafRelay() {
             if (beacon.ssidLen > BEACON_MAX_SSID) beacon.ssidLen = BEACON_MAX_SSID;
             memcpy(beacon.ssid, _apSSID, beacon.ssidLen);
             beacon.ssid[beacon.ssidLen] = '\0';
-            beacon.imageCount = storage.imageCount();
+            beacon.imageCount = (g_role == NODE_ROLE_RELAY && _relayCachedServing)
+                                    ? cachedStorage.imageCount()
+                                    : storage.imageCount();
             beacon.batteryPct = 0xFF;         // USB powered
             beacon.uptimeMin  = (uint16_t)(millis() / 60000);
 
@@ -698,10 +843,25 @@ static void loopLeafRelay() {
     static uint32_t lastDisplayUpdate = 0;
     if (millis() - lastDisplayUpdate > 2000) {
         lastDisplayUpdate = millis();
-        display.fillRect(0, 56, 128, 8, SSD1306_BLACK);
-        display.setCursor(0, 56);
-        display.printf("Reqs:%-4lu Blks:%-5lu",
-                       coapServer.requestCount(), coapServer.blocksSent());
+
+        if (_relayCachedServing) {
+            // Show cached-serving status on bottom two lines
+            display.fillRect(0, 48, 128, 16, SSD1306_BLACK);
+            display.setCursor(0, 48);
+            uint32_t elapsed = (millis() - _relayCachedStartMs) / 1000;
+            display.printf("Serving:%u %lus",
+                           cachedStorage.imageCount(), elapsed);
+            display.setCursor(0, 56);
+            display.printf("CReqs:%-3lu CBlk:%-4lu",
+                           cachedCoapServer.requestCount(),
+                           cachedCoapServer.blocksSent());
+        } else {
+            display.fillRect(0, 56, 128, 8, SSD1306_BLACK);
+            display.setCursor(0, 56);
+            display.printf("Reqs:%-4lu Blks:%-5lu",
+                           coapServer.requestCount(), coapServer.blocksSent());
+        }
+
         display.display();
     }
 }
@@ -711,9 +871,43 @@ static void loopLeafRelay() {
 // Arduino entry points
 // =============================================================
 
+// ── Reset reason helper ──────────────────────────────────────
+static const char* getResetReasonStr() {
+    switch (esp_reset_reason()) {
+        case ESP_RST_POWERON:  return "Power-on";
+        case ESP_RST_SW:       return "Software";
+        case ESP_RST_PANIC:    return "Panic/crash";
+        case ESP_RST_INT_WDT:  return "Interrupt WDT";
+        case ESP_RST_TASK_WDT: return "Task WDT";
+        case ESP_RST_WDT:      return "Other WDT";
+        case ESP_RST_DEEPSLEEP:return "Deep sleep";
+        case ESP_RST_BROWNOUT: return "BROWNOUT";
+        case ESP_RST_SDIO:     return "SDIO";
+        default:               return "Unknown";
+    }
+}
+
+static bool wasCleanBoot() {
+    esp_reset_reason_t r = esp_reset_reason();
+    return (r == ESP_RST_POWERON || r == ESP_RST_SW || r == ESP_RST_DEEPSLEEP);
+}
+
 void setup() {
+    // ── Disable brownout detector ─────────────────────────────
+    // WiFi TX + SD card reads together can spike current draw on the
+    // T3-S3, triggering a false brownout reset.  Disable the detector
+    // so the board stays up during heavy WiFi+SPI traffic.
+    WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
+
     Serial.begin(115200);
     delay(1000);
+
+    // ── Log reset reason (helps diagnose brownouts / crashes) ─
+    Serial.printf("\n[Boot] Reset reason: %s\n", getResetReasonStr());
+    if (!wasCleanBoot()) {
+        Serial.println("[Boot] Non-clean reset detected — adding extra stabilisation delay");
+        delay(2000);   // Let power rail + SD card fully settle
+    }
 
     // ── OLED must be ready before role-selection menu ────────
     Wire.begin(OLED_SDA, OLED_SCL);

@@ -57,8 +57,8 @@
 #endif
 
 // ──────────────────────── Tunables ────────────────────────────
-/** Block size in bytes — aligned with CoAP Block2 SZX=6 (1024 B). */
-static constexpr size_t VSENSOR_BLOCK_SIZE = 1024;
+/** Block size in bytes — aligned with CoAP Block2 SZX=5 (512 B). */
+static constexpr size_t VSENSOR_BLOCK_SIZE = 512;
 
 /** Maximum images expected on the SD card. */
 static constexpr uint8_t VSENSOR_MAX_IMAGES = 32;
@@ -92,21 +92,41 @@ struct BlockReadResult {
 
 class StorageReader {
 public:
-    StorageReader();
+    /**
+     * @param imageDir  Root directory to scan for JPEG files.
+     *                  Defaults to VSENSOR_IMAGE_DIR ("/images").
+     *                  A relay node would use "/cached" here.
+     */
+    explicit StorageReader(const char* imageDir = VSENSOR_IMAGE_DIR);
 
     // ── Lifecycle ───────────────────────────────────────────
     /**
-     * Mount the SD card and scan /images for JPEG files.
+     * Mount the SD card and scan the configured directory for JPEG files.
      * Call once after wake-up, before any read operations.
      * @return true if mount + scan succeeded.
      */
     bool begin();
 
     /**
+     * Scan the configured directory without mounting SD (SD already mounted).
+     * Use this when SD was mounted externally (e.g., by another StorageReader
+     * instance or by the gateway's direct SD.begin() call).
+     * @return true if scan found at least one image.
+     */
+    bool beginScanOnly();
+
+    /**
      * Unmount SD card and release SPI bus.
      * Call before entering deep sleep for minimum quiescent current.
      */
     void end();
+
+    /**
+     * Clear scan state without unmounting SD.
+     * Use this to pair with beginScanOnly() — cleans up catalogue and
+     * file handles but leaves SD mounted for other users.
+     */
+    void endScanOnly();
 
     // ── Image Catalogue ─────────────────────────────────────
     /** Number of JPEG files discovered on /images. */
@@ -161,7 +181,9 @@ public:
     uint16_t computeChecksum(uint8_t index);
 
 private:
+    const char* _imageDir;      ///< Directory to scan (e.g., "/images" or "/cached")
     bool        _mounted;
+    bool        _mountedExternally; ///< True if SD was mounted by someone else (beginScanOnly)
     uint8_t     _imageCount;
     ImageInfo   _catalogue[VSENSOR_MAX_IMAGES];
 
@@ -169,7 +191,7 @@ private:
     uint8_t     _currentIndex;
     uint32_t    _currentBlock;
 
-    /** Scan /images and populate _catalogue[]. */
+    /** Scan _imageDir and populate _catalogue[]. */
     bool        _scanDirectory();
 
     /** Internal: fill a BlockReadResult from an open file at a byte offset. */

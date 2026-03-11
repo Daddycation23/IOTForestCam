@@ -63,6 +63,11 @@ private:
     // Track which image is currently open (avoids repeated open/close)
     int8_t _openImageIndex;
 
+    // Reusable block buffer — kept as a member to avoid ~520 bytes on the
+    // stack during _handleImageGet(), preventing stack overflow when WiFi
+    // interrupts are also active.
+    BlockReadResult _blockBuf;
+
     // Counters
     uint32_t _requestCount;
     uint32_t _blocksSent;

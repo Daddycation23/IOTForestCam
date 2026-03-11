@@ -32,11 +32,11 @@
 // ─── CoAP Constants ──────────────────────────────────────────
 static constexpr uint16_t COAP_DEFAULT_PORT   = 5683;
 static constexpr uint8_t  COAP_VERSION        = 1;
-static constexpr size_t   COAP_MAX_PDU_SIZE   = 1280;   // 1024 payload + headers
+static constexpr size_t   COAP_MAX_PDU_SIZE   = 768;    // 512 payload + headers
 static constexpr uint8_t  COAP_PAYLOAD_MARKER = 0xFF;
 
-/** Block size exponent: 2^(6+4) = 1024 bytes, matching StorageReader */
-static constexpr uint8_t  COAP_BLOCK_SZX      = 6;
+/** Block size exponent: 2^(5+4) = 512 bytes, matching StorageReader */
+static constexpr uint8_t  COAP_BLOCK_SZX      = 5;
 
 // ─── Message Types (RFC 7252, Section 3) ─────────────────────
 enum CoapType : uint8_t {

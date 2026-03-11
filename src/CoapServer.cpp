@@ -233,9 +233,9 @@ void CoapServer::_handleImageGet(CoapMessage& req, uint8_t imageIndex,
         _openImageIndex = imageIndex;
     }
 
-    // Read the requested block from SD card
-    BlockReadResult block;
-    if (!_storage.readBlock(blockNum, block)) {
+    // Read the requested block from SD card (uses member _blockBuf to
+    // avoid ~520 bytes of stack that could cause overflow with WiFi active)
+    if (!_storage.readBlock(blockNum, _blockBuf)) {
         _sendError(req, COAP_INTERNAL_ERROR, "Block read failed",
                    remoteIP, remotePort);
         return;
@@ -250,7 +250,7 @@ void CoapServer::_handleImageGet(CoapMessage& req, uint8_t imageIndex,
     // Block2 option: our block number, more flag, SZX=5 (512 bytes)
     Block2Info respBlock2;
     respBlock2.num  = blockNum;
-    respBlock2.more = !block.isLast;
+    respBlock2.more = !_blockBuf.isLast;
     respBlock2.szx  = COAP_BLOCK_SZX;
     resp.addOptionUint(COAP_OPT_BLOCK2, respBlock2.encode());
 
@@ -260,15 +260,19 @@ void CoapServer::_handleImageGet(CoapMessage& req, uint8_t imageIndex,
     }
 
     // Payload: image block data
-    resp.payload       = block.data;
-    resp.payloadLength = block.length;
+    resp.payload       = _blockBuf.data;
+    resp.payloadLength = _blockBuf.length;
 
     _sendResponse(resp, remoteIP, remotePort);
     _blocksSent++;
 
+    // Yield to WiFi stack between block responses — prevents WiFi task
+    // starvation during rapid multi-block transfers.
+    yield();
+
     log_d("%s: image/%u block %lu/%lu (%u B)%s → %s:%u",
           TAG, imageIndex, blockNum, info.totalBlocks - 1,
-          block.length, block.isLast ? " [LAST]" : "",
+          _blockBuf.length, _blockBuf.isLast ? " [LAST]" : "",
           remoteIP.toString().c_str(), remotePort);
 }
 

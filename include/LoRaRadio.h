@@ -127,6 +127,15 @@ private:
     SX1262        _radio;
     bool          _initialized;
     float         _lastRSSI;
+
+    // ─── Raw SPI helpers (SX1262 clone workaround) ──────────
+    // These bypass RadioLib's SPI status-byte checking which
+    // returns CMD_TIMEOUT on some SX1262 clones.
+    void    _rawSpiWrite(const uint8_t* cmd, size_t len);
+    uint8_t _rawGetStatus();
+    uint8_t _rawReadReg(uint16_t addr);
+    void    _rawGetRxBufferStatus(uint8_t& payloadLen, uint8_t& rxStartPtr);
+    void    _rawReadBuffer(uint8_t offset, uint8_t* data, uint8_t len);
 };
 
 #endif // LORA_RADIO_H
