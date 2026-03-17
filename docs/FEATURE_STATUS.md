@@ -71,18 +71,20 @@
 
 ---
 
-## In Progress
-
 ### 12. Deep Sleep + Two-Step Wake Protocol
-- **Planned Branch:** `feature/deep-sleep`
-- **Description:** Leaf/relay nodes enter deep sleep between harvests. Gateway sends LoRa wake ping to trigger DIO1 wakeup. Adapted from `part2` branch for SX1280.
+- **Branch:** `feature/deep-sleep`
+- **Description:** Leaf/relay nodes enter deep sleep between harvests (<10µA). Gateway sends WAKE_PING over LoRa to trigger DIO1 ext1 wakeup. Fast-path boot from RTC memory skips role menu. New HARVEST_WAKE_NODE state in harvest loop.
+- **Key Files:** `include/DeepSleepManager.h`, `src/DeepSleepManager.cpp`, `include/AodvPacket.h`, `src/HarvestLoop.cpp`, `src/main.cpp`
+- **Tests:** `test/test_deep_sleep/` (16 unit tests)
+- **Test Guide:** [docs/DEEP_SLEEP_SETUP.md](DEEP_SLEEP_SETUP.md)
+
+---
+
+## In Progress
 
 ### 13. Python Dashboard
 - **Planned Branch:** `feature/dashboard`
 - **Description:** Laptop Python app using `aiocoap` + `tkinter` to pull and display images from gateway via CoAP.
-
-### 14. Deep Sleep / LoRa DIO1 Wake-up
-- **Status:** Planned as part of Feature 12
 
 ### 15. AES-128 LoRa Encryption
 - **Status:** Not planned for current sprint
@@ -102,7 +104,7 @@
 ```
 coap-implemented
   └── feature/freertos (e14776c) ................ [Done]
-        └── feature/coap-optimization ........... [Done]
-              └── feature/deep-sleep ............ [Planned]
+        └── feature/coap-optimization (5458b43) . [Done]
+              └── feature/deep-sleep ............ [Done]
                     └── feature/dashboard ....... [Planned]
 ```

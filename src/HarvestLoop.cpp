@@ -84,6 +84,9 @@ void HarvestLoop::tick() {
         case HARVEST_DISCONNECT:
             _doDisconnect();
             break;
+        case HARVEST_WAKE_NODE:
+            _doWakeNode();
+            break;
         case HARVEST_CONNECT:
             _doConnect();
             break;
@@ -114,6 +117,7 @@ const char* HarvestLoop::stateStr() const {
         case HARVEST_START:           return "START";
         case HARVEST_ROUTE_DISCOVERY: return "ROUTE_DISC";
         case HARVEST_DISCONNECT:      return "DISCONNECT";
+        case HARVEST_WAKE_NODE:       return "WAKE_NODE";
         case HARVEST_CONNECT:         return "CONNECT";
         case HARVEST_COAP_INIT:       return "COAP_INIT";
         case HARVEST_DOWNLOAD:        return "DOWNLOAD";
@@ -207,6 +211,29 @@ void HarvestLoop::_doDisconnect() {
     vTaskDelay(pdMS_TO_TICKS(500));
 
     log_d("%s: WiFi disconnected", TAG);
+    _enterState(HARVEST_WAKE_NODE);
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// State: WAKE_NODE — Send LoRa wake ping before WiFi connect
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+void HarvestLoop::_doWakeNode() {
+    // Send a WAKE_PING to trigger DIO1 on the target leaf node.
+    // The leaf may be in deep sleep and needs a LoRa packet to wake.
+    if (_loraRadio) {
+        uint8_t wakePkt[3] = { 0xFC, 0x01, 0x40 };  // magic, version, WAKE_PING
+        loraSendSafe(wakePkt, sizeof(wakePkt));
+        loraStartReceiveSafe();
+
+        Serial.printf("[%s] WAKE_PING sent for %s — waiting %ums for node to boot\n",
+                      TAG, _currentNode.ssid, (unsigned)2500);
+    }
+
+    // Wait for the leaf to reinit its radio and start WiFi AP.
+    // 500ms radio settle + ~2000ms WiFi AP startup = 2500ms total.
+    vTaskDelay(pdMS_TO_TICKS(2500));
+
     _enterState(HARVEST_CONNECT);
 }
 

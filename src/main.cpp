@@ -58,6 +58,9 @@
 // ── FreeRTOS task configuration ─────────────────────────────
 #include "TaskConfig.h"
 
+// ── Deep sleep management ───────────────────────────────────
+#include "DeepSleepManager.h"
+
 // ─── LILYGO T3-S3 V1.2 Pin Definitions ──────────────────────
 #define OLED_SDA 18
 #define OLED_SCL 17
@@ -112,6 +115,9 @@ static bool    _loraReady    = false;
 static bool    _gwLoraReady  = false;   // Gateway LoRa status (set in initGateway)
 static bool    _relayBusy    = false;
 static uint8_t _relayCmdId   = 0;
+
+// ─── Deep sleep manager (leaf/relay only) ────────────────────
+DeepSleepManager deepSleepMgr;
 
 // ─── Relay cached-image serving state ────────────────────────
 static bool     _relayCachedServing  = false;   // Currently serving cached images?
@@ -972,12 +978,29 @@ static void taskLoRaLeafRelay(void* param) {
                             uint8_t myMac[6];
                             WiFi.macAddress(myMac);
                             if (memcmp(pendingCmd.relayId, myMac, 6) == 0 && !_relayBusy) {
+                                deepSleepMgr.onActivity();  // Reset sleep timer
                                 xQueueSend(xRelayHarvestQueue, &pendingCmd, 0);
                             }
                         }
                     }
+                    // Any HARVEST_CMD means gateway is actively harvesting — stay awake
+                    deepSleepMgr.onActivity();
                     break;
                 }
+
+                case PKT_TYPE_WAKE_PING:
+                    // Wake ping received — just an activity marker, no action needed
+                    deepSleepMgr.onActivity();
+                    Serial.println("[LoRa] WAKE_PING received — resetting sleep timer");
+                    break;
+
+                case PKT_TYPE_WAKE_BEACON_REQ:
+                    // Gateway requesting a beacon — send one immediately
+                    deepSleepMgr.onActivity();
+                    Serial.println("[LoRa] WAKE_BEACON_REQ received — sending beacon");
+                    // The next beacon TX cycle will handle it (or we could force one here)
+                    lastBeaconMs = 0;  // Force immediate beacon
+                    break;
 
                 case PKT_TYPE_ELECTION:
                 case PKT_TYPE_SUPPRESS:
@@ -998,6 +1021,33 @@ static void taskLoRaLeafRelay(void* param) {
 
         // ── Election state machine ──────────────────────────
         electionMgr.tick();
+
+        // ── Deep sleep check (leaf/relay only) ──────────────
+        if (g_role != NODE_ROLE_GATEWAY && !electionMgr.isPromoted()) {
+            deepSleepMgr.setCoapBusy(_relayCachedServing);
+            deepSleepMgr.setHarvestInProgress(_relayBusy);
+
+            if (deepSleepMgr.shouldSleep(millis())) {
+                Serial.println("\n[DeepSleep] Active timeout expired — entering deep sleep");
+                Serial.printf("[DeepSleep] Boot count: %lu\n", deepSleepMgr.bootCount());
+
+                // Save state for fast-path wake
+                deepSleepMgr.saveState(g_role, _apSSID);
+
+                // Stop CoAP server and WiFi before sleeping
+                coapServer.stop();
+                WiFi.disconnect(true);
+                WiFi.mode(WIFI_OFF);
+
+                // Prepare radio for DIO1 wake
+                if (_loraReady) {
+                    deepSleepMgr.prepareRadioForSleep(loraRadio);
+                }
+
+                deepSleepMgr.enterSleep();
+                // ── Does not return ──
+            }
+        }
 
         // ── Yield to other tasks ────────────────────────────
         vTaskDelay(pdMS_TO_TICKS(10));
@@ -1114,11 +1164,7 @@ void setup() {
     delay(1000);
 
     // ── Log reset reason ─────────────────────────────────────
-    Serial.printf("\n[Boot] Reset reason: %s\n", getResetReasonStr());
-    if (!wasCleanBoot()) {
-        Serial.println("[Boot] Non-clean reset detected — adding extra stabilisation delay");
-        delay(2000);
-    }
+    Serial.printf("\n[Boot] Reset reason: %s (boot #%lu)\n", getResetReasonStr(), rtcBootCount);
 
     // ── OLED ─────────────────────────────────────────────────
     Wire.begin(OLED_SDA, OLED_SCL);
@@ -1126,9 +1172,38 @@ void setup() {
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
 
-    // ── Role selection ──────────────────────────────────────
-    g_role = RoleConfig::selectRole(display);
-    Serial.printf("\n[Role] Booting as: %s\n\n", RoleConfig::roleName(g_role));
+    // ── Fast-path wake: skip role menu if woken by LoRa ─────
+    if (DeepSleepManager::wasWokenByLoRa()) {
+        char restoredSSID[32];
+        NodeRole restoredRole;
+        if (deepSleepMgr.restoreState(restoredRole, restoredSSID)) {
+            g_role = restoredRole;
+            strncpy(_apSSID, restoredSSID, sizeof(_apSSID));
+            Serial.printf("[Wake] Fast-path: restored role=%s, SSID=%s\n",
+                          RoleConfig::roleName(g_role), _apSSID);
+
+            display.clearDisplay();
+            display.setCursor(0, 0);
+            display.println("LoRa Wake!");
+            display.printf("Role: %s\n", RoleConfig::roleName(g_role));
+            display.printf("Boot #%lu\n", rtcBootCount);
+            display.display();
+        } else {
+            // RTC state invalid — fall through to normal boot
+            Serial.println("[Wake] No valid RTC state — doing normal boot");
+            goto normal_boot;
+        }
+    } else {
+normal_boot:
+        if (!wasCleanBoot()) {
+            Serial.println("[Boot] Non-clean reset detected — adding extra stabilisation delay");
+            delay(2000);
+        }
+
+        // ── Role selection ──────────────────────────────────────
+        g_role = RoleConfig::selectRole(display);
+        Serial.printf("\n[Role] Booting as: %s\n\n", RoleConfig::roleName(g_role));
+    }
 
     // ── Initialize FreeRTOS primitives ───────────────────────
     initRTOS();

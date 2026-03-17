@@ -37,6 +37,10 @@ static constexpr uint8_t PKT_TYPE_SUPPRESS    = 0x31;
 static constexpr uint8_t PKT_TYPE_COORDINATOR = 0x32;
 static constexpr uint8_t PKT_TYPE_GW_RECLAIM  = 0x33;
 
+// ─── Wake Protocol Packet Types ──────────────────────────────
+static constexpr uint8_t PKT_TYPE_WAKE_PING       = 0x40;  // Triggers DIO1 wakeup (minimal 3-byte packet)
+static constexpr uint8_t PKT_TYPE_WAKE_BEACON_REQ = 0x41;  // Request beacon after wake
+
 // ─── RERR limits ──────────────────────────────────────────────
 static constexpr uint8_t RERR_MAX_DESTS = 6;   // Max unreachable destinations per RERR
 

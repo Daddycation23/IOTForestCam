@@ -38,6 +38,7 @@ enum HarvestState : uint8_t {
     HARVEST_START,              ///< Begin a harvest cycle
     HARVEST_ROUTE_DISCOVERY,    ///< Broadcast RREQ for all nodes (AODV)
     HARVEST_DISCONNECT,         ///< Disconnect from current WiFi network
+    HARVEST_WAKE_NODE,          ///< Send LoRa wake ping before WiFi connect
     HARVEST_CONNECT,            ///< Connect to next leaf's WiFi AP (direct) or relay's AP
     HARVEST_COAP_INIT,          ///< Initialize CoAP client on new network
     HARVEST_DOWNLOAD,           ///< Download images from current node
@@ -154,6 +155,7 @@ private:
     void _doStart();
     void _doRouteDiscovery();
     void _doDisconnect();
+    void _doWakeNode();
     void _doConnect();
     void _doCoapInit();
     void _doDownload();
