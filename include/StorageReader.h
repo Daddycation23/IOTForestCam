@@ -57,8 +57,8 @@
 #endif
 
 // ──────────────────────── Tunables ────────────────────────────
-/** Block size in bytes — aligned with CoAP Block2 SZX=5 (512 B). */
-static constexpr size_t VSENSOR_BLOCK_SIZE = 512;
+/** Block size in bytes — aligned with CoAP Block2 SZX=6 (1024 B). */
+static constexpr size_t VSENSOR_BLOCK_SIZE = 1024;
 
 /** Maximum images expected on the SD card. */
 static constexpr uint8_t VSENSOR_MAX_IMAGES = 32;

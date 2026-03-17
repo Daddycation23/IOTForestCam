@@ -247,6 +247,254 @@ CoapClientError CoapClient::downloadImage(IPAddress serverIP, uint16_t serverPor
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Download Image — Pipelined Block2 Transfer
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CoapClientError CoapClient::downloadImagePipelined(IPAddress serverIP, uint16_t serverPort,
+                                                     uint8_t imageIndex,
+                                                     const char* outputPath,
+                                                     TransferStats& stats)
+{
+    stats.reset();
+    uint32_t startMs = millis();
+
+    char uriPath[16];
+    snprintf(uriPath, sizeof(uriPath), "image/%u", imageIndex);
+
+    // Open output file
+    File outFile;
+    bool writeToSD = (outputPath != nullptr);
+    if (writeToSD) {
+        if (SD.exists(outputPath)) SD.remove(outputPath);
+        outFile = SD.open(outputPath, FILE_WRITE);
+        if (!outFile) {
+            log_e("%s: Failed to open %s for writing", TAG, outputPath);
+            return COAP_CLIENT_SD_ERROR;
+        }
+    }
+
+    // Fletcher-16 accumulators
+    uint16_t sum1 = 0, sum2 = 0;
+
+    // Pipeline state
+    uint32_t nextToSend    = 0;    // Next block number to request
+    uint32_t nextToReceive = 0;    // Next block number we expect in-order
+    uint32_t totalBlocks   = 0;    // Estimated total (updated from Size2)
+    bool     lastBlockSeen = false;
+    uint8_t  outstanding   = 0;
+
+    // Track outstanding requests by their message ID and block number
+    struct PendingRequest {
+        uint16_t msgId;
+        uint8_t  token;
+        uint32_t blockNum;
+        uint32_t sentMs;
+        bool     active;
+    };
+    PendingRequest pending[COAP_CLIENT_WINDOW_SIZE] = {};
+
+    // Reorder buffer for out-of-order responses
+    struct BufferedBlock {
+        uint32_t blockNum;
+        uint8_t  data[1024];
+        uint16_t length;
+        bool     more;
+        bool     valid;
+    };
+    BufferedBlock reorderBuf[COAP_CLIENT_WINDOW_SIZE] = {};
+
+    auto sendBlockRequest = [&](uint32_t blockNum) -> bool {
+        // Find free slot
+        int slot = -1;
+        for (uint8_t i = 0; i < COAP_CLIENT_WINDOW_SIZE; i++) {
+            if (!pending[i].active) { slot = i; break; }
+        }
+        if (slot < 0) return false;
+
+        CoapMessage request = _buildBlock2Request(uriPath, blockNum);
+        pending[slot].msgId    = request.messageId;
+        pending[slot].token    = request.token[0];
+        pending[slot].blockNum = blockNum;
+        pending[slot].sentMs   = millis();
+        pending[slot].active   = true;
+
+        _sendMessage(request, serverIP, serverPort);
+        outstanding++;
+        return true;
+    };
+
+    auto findPendingSlot = [&](uint16_t msgId) -> int {
+        for (uint8_t i = 0; i < COAP_CLIENT_WINDOW_SIZE; i++) {
+            if (pending[i].active && pending[i].msgId == msgId) return i;
+        }
+        return -1;
+    };
+
+    auto processInOrderBlocks = [&]() -> CoapClientError {
+        // Write any buffered blocks that are now in order
+        for (;;) {
+            int found = -1;
+            for (uint8_t i = 0; i < COAP_CLIENT_WINDOW_SIZE; i++) {
+                if (reorderBuf[i].valid && reorderBuf[i].blockNum == nextToReceive) {
+                    found = i;
+                    break;
+                }
+            }
+            if (found < 0) break;
+
+            BufferedBlock& blk = reorderBuf[found];
+
+            // Update checksum
+            _updateFletcher16(sum1, sum2, blk.data, blk.length);
+
+            // Write to SD
+            if (writeToSD) {
+                size_t written = outFile.write(blk.data, blk.length);
+                if (written != blk.length) {
+                    log_e("%s: SD write error on block %lu", TAG, blk.blockNum);
+                    return COAP_CLIENT_SD_ERROR;
+                }
+            }
+
+            stats.totalBytes += blk.length;
+            stats.totalBlocks++;
+
+            if (!blk.more) lastBlockSeen = true;
+
+            // Progress logging
+            if (nextToReceive % 50 == 0 || !blk.more) {
+                if (totalBlocks > 0) {
+                    Serial.printf("  Block %lu — %lu bytes (%.1f%%)\n",
+                                  nextToReceive, stats.totalBytes,
+                                  (float)stats.totalBytes / (totalBlocks * 1024) * 100.0f);
+                } else {
+                    Serial.printf("  Block %lu — %lu bytes\n",
+                                  nextToReceive, stats.totalBytes);
+                }
+            }
+
+            blk.valid = false;
+            nextToReceive++;
+        }
+        return COAP_CLIENT_OK;
+    };
+
+    // ── Initial burst: send first WINDOW_SIZE requests ───────
+    log_i("%s: Pipelined download — image/%u, window=%u", TAG, imageIndex, COAP_CLIENT_WINDOW_SIZE);
+
+    for (uint8_t i = 0; i < COAP_CLIENT_WINDOW_SIZE; i++) {
+        sendBlockRequest(nextToSend++);
+    }
+
+    // ── Main receive loop ────────────────────────────────────
+    uint32_t lastActivityMs = millis();
+    uint32_t overallTimeout = 30000;  // 30s overall timeout per image
+
+    while (!lastBlockSeen || nextToReceive < nextToSend) {
+        // Check for overall timeout
+        if (millis() - lastActivityMs > overallTimeout) {
+            log_e("%s: Pipelined download overall timeout", TAG);
+            if (writeToSD) outFile.close();
+            return COAP_CLIENT_TIMEOUT;
+        }
+
+        // Check for individual request timeouts and retransmit
+        for (uint8_t i = 0; i < COAP_CLIENT_WINDOW_SIZE; i++) {
+            if (pending[i].active && millis() - pending[i].sentMs > COAP_CLIENT_TIMEOUT_MS) {
+                stats.retryCount++;
+                log_d("%s: Retransmitting block %lu", TAG, pending[i].blockNum);
+                CoapMessage retry = _buildBlock2Request(uriPath, pending[i].blockNum);
+                retry.messageId = pending[i].msgId;  // Keep same msg ID
+                retry.token[0]  = pending[i].token;
+                _sendMessage(retry, serverIP, serverPort);
+                pending[i].sentMs = millis();
+            }
+        }
+
+        // Poll for responses
+        int packetSize = _udp.parsePacket();
+        if (packetSize > 0 && packetSize <= (int)sizeof(_rxBuf)) {
+            int len = _udp.read(_rxBuf, sizeof(_rxBuf));
+            if (len > 0) {
+                CoapMessage response;
+                if (response.parse(_rxBuf, len)) {
+                    int slot = findPendingSlot(response.messageId);
+                    if (slot >= 0 && response.type == COAP_ACK &&
+                        response.tokenLength == 1 &&
+                        response.token[0] == pending[slot].token)
+                    {
+                        lastActivityMs = millis();
+                        uint32_t blockNum = pending[slot].blockNum;
+                        pending[slot].active = false;
+                        outstanding--;
+
+                        // Extract Block2 info
+                        Block2Info block2;
+                        if (response.getBlock2(block2) && response.code == COAP_CONTENT) {
+                            // Get total size from first block
+                            if (blockNum == 0) {
+                                const CoapOption* size2Opt = response.findOption(COAP_OPT_SIZE2);
+                                if (size2Opt) {
+                                    uint32_t totalSize = size2Opt->asUint();
+                                    totalBlocks = (totalSize + block2.blockSize() - 1) / block2.blockSize();
+                                    log_i("%s: Image %u — %lu bytes, ~%lu blocks",
+                                          TAG, imageIndex, totalSize, totalBlocks);
+                                }
+                            }
+
+                            // Buffer the response data
+                            int bufSlot = -1;
+                            for (uint8_t b = 0; b < COAP_CLIENT_WINDOW_SIZE; b++) {
+                                if (!reorderBuf[b].valid) { bufSlot = b; break; }
+                            }
+                            if (bufSlot >= 0 && response.payload && response.payloadLength > 0) {
+                                reorderBuf[bufSlot].blockNum = blockNum;
+                                memcpy(reorderBuf[bufSlot].data, response.payload,
+                                       min((size_t)response.payloadLength, sizeof(reorderBuf[bufSlot].data)));
+                                reorderBuf[bufSlot].length = response.payloadLength;
+                                reorderBuf[bufSlot].more = block2.more;
+                                reorderBuf[bufSlot].valid = true;
+                            }
+
+                            // Process in-order blocks
+                            CoapClientError procErr = processInOrderBlocks();
+                            if (procErr != COAP_CLIENT_OK) {
+                                if (writeToSD) outFile.close();
+                                return procErr;
+                            }
+
+                            // Send next block request if more to go
+                            if (!lastBlockSeen && outstanding < COAP_CLIENT_WINDOW_SIZE) {
+                                // Only send if we haven't already seen the last block
+                                if (totalBlocks == 0 || nextToSend < totalBlocks) {
+                                    sendBlockRequest(nextToSend++);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        vTaskDelay(1);  // Yield
+    }
+
+    // Finalize
+    if (writeToSD) outFile.close();
+
+    stats.computedChecksum = (sum2 << 8) | sum1;
+    stats.elapsedMs = millis() - startMs;
+    stats.finalize();
+    _lastStats = stats;
+
+    log_i("%s: Pipelined download complete — %lu bytes, %lu blocks, %lu ms, %.1f KB/s",
+          TAG, stats.totalBytes, stats.totalBlocks,
+          stats.elapsedMs, stats.throughputKBps);
+
+    return COAP_CLIENT_OK;
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Verify Checksum
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

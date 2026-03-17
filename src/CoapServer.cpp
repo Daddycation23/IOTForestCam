@@ -247,7 +247,7 @@ void CoapServer::_handleImageGet(CoapMessage& req, uint8_t imageIndex,
     // Content-Format: application/octet-stream (42)
     resp.addOptionUint(COAP_OPT_CONTENT_FORMAT, COAP_FMT_APP_OCTET_STREAM);
 
-    // Block2 option: our block number, more flag, SZX=5 (512 bytes)
+    // Block2 option: our block number, more flag, SZX=6 (1024 bytes)
     Block2Info respBlock2;
     respBlock2.num  = blockNum;
     respBlock2.more = !_blockBuf.isLast;

@@ -277,7 +277,7 @@ static void relayHarvest(const HarvestCmdPacket& cmd) {
                     if (SD.exists(outPath)) SD.remove(outPath);
 
                     TransferStats stats;
-                    err = relayCoap.downloadImage(leafIP, leafPort, i, outPath, stats);
+                    err = relayCoap.downloadImagePipelined(leafIP, leafPort, i, outPath, stats);
 
                     if (err == COAP_CLIENT_OK) {
                         ack.imageCount++;

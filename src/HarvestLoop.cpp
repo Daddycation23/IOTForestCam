@@ -489,7 +489,7 @@ void HarvestLoop::_doDownload() {
         }
 
         TransferStats stats;
-        err = _coapClient.downloadImage(leafIP, leafPort, i, savePath, stats);
+        err = _coapClient.downloadImagePipelined(leafIP, leafPort, i, savePath, stats);
 
         if (err == COAP_CLIENT_OK) {
             Serial.printf("    Bytes: %lu | Blocks: %lu | Time: %lu ms | Speed: %.1f KB/s\n",

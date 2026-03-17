@@ -62,15 +62,16 @@
 
 ---
 
-## In Progress
-
 ### 11. CoAP Pipelined Block Transfer
-- **Branch:** `feature/coap-optimization` (created, not yet implemented)
-- **Description:** Sliding window of 2-3 outstanding CoAP block requests to overlap server processing with client SD writes. Target 2-3x throughput improvement.
+- **Branch:** `feature/coap-optimization`
+- **Description:** Block size doubled (512→1024B), pipelined requests with window of 3, timeout reduced (5s→2s). Target 2-3x throughput improvement.
+- **Key Files:** `include/CoapMessage.h`, `include/CoapClient.h`, `src/CoapClient.cpp`, `include/StorageReader.h`
+- **Tests:** `test/test_coap_block/` (15 unit tests)
+- **Test Guide:** [docs/COAP_OPTIMIZATION_SETUP.md](COAP_OPTIMIZATION_SETUP.md)
 
 ---
 
-## Not Yet Implemented
+## In Progress
 
 ### 12. Deep Sleep + Two-Step Wake Protocol
 - **Planned Branch:** `feature/deep-sleep`
@@ -100,8 +101,8 @@
 
 ```
 coap-implemented
-  └── feature/freertos (e14776c) ............ [Done]
-        └── feature/coap-optimization ....... [In Progress]
-              └── feature/deep-sleep ........ [Planned]
-                    └── feature/dashboard ... [Planned]
+  └── feature/freertos (e14776c) ................ [Done]
+        └── feature/coap-optimization ........... [Done]
+              └── feature/deep-sleep ............ [Planned]
+                    └── feature/dashboard ....... [Planned]
 ```

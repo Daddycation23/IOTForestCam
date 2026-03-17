@@ -88,7 +88,8 @@ struct TransferStats {
 // ─── Tuning Constants ───────────────────────────────────────
 
 static constexpr uint8_t  COAP_CLIENT_MAX_RETRIES = 3;
-static constexpr uint32_t COAP_CLIENT_TIMEOUT_MS  = 5000;
+static constexpr uint32_t COAP_CLIENT_TIMEOUT_MS  = 2000;    // Reduced: local WiFi is fast
+static constexpr uint8_t  COAP_CLIENT_WINDOW_SIZE = 3;       // Pipeline: outstanding requests
 
 // ─── CoapClient Class ──────────────────────────────────────
 
@@ -149,6 +150,18 @@ public:
     CoapClientError verifyChecksum(IPAddress serverIP, uint16_t serverPort,
                                     uint8_t imageIndex,
                                     uint16_t localChecksum, bool& match);
+
+    /**
+     * Download an image using pipelined Block2 requests.
+     * Sends up to COAP_CLIENT_WINDOW_SIZE requests ahead, overlapping
+     * server processing with client SD writes for 2-3x throughput.
+     *
+     * Falls back to sequential download if pipelining causes errors.
+     */
+    CoapClientError downloadImagePipelined(IPAddress serverIP, uint16_t serverPort,
+                                            uint8_t imageIndex,
+                                            const char* outputPath,
+                                            TransferStats& stats);
 
     // ── Accessors ───────────────────────────────────────────
     const TransferStats& lastStats() const { return _lastStats; }
