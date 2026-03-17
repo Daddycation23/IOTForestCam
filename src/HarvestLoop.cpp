@@ -306,7 +306,7 @@ void HarvestLoop::_doConnect() {
     uint32_t wifiStart = millis();
     while (WiFi.status() != WL_CONNECTED &&
            millis() - wifiStart < HARVEST_WIFI_TIMEOUT_MS) {
-        delay(250);
+        vTaskDelay(pdMS_TO_TICKS(250));
         Serial.print(".");
     }
     Serial.println();

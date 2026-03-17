@@ -8,6 +8,7 @@
 
 #include "TaskConfig.h"
 #include "LoRaRadio.h"
+#include "AodvPacket.h"    // HarvestCmdPacket — needed for relay harvest queue item size
 
 // ─── Extern reference to the global LoRaRadio (defined in main.cpp) ─
 extern LoRaRadio loraRadio;
@@ -33,7 +34,7 @@ void initRTOS() {
 
     xLoRaTxQueue       = xQueueCreate(LORA_TX_QUEUE_SIZE, sizeof(LoRaTxRequest));
     xHarvestCmdQueue   = xQueueCreate(HARVEST_CMD_QUEUE_SIZE, sizeof(uint8_t));
-    xRelayHarvestQueue = xQueueCreate(RELAY_HARVEST_QUEUE_SIZE, sizeof(uint8_t));
+    xRelayHarvestQueue = xQueueCreate(RELAY_HARVEST_QUEUE_SIZE, sizeof(HarvestCmdPacket));
     xHarvestEvents     = xEventGroupCreate();
 
     configASSERT(xLoRaMutex);

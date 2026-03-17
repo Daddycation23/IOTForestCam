@@ -508,8 +508,8 @@ CoapClientError CoapClient::verifyChecksum(IPAddress serverIP, uint16_t serverPo
     char uriPath[20];
     snprintf(uriPath, sizeof(uriPath), "checksum/%u", imageIndex);
 
-    uint8_t buf[128];
-    size_t len = sizeof(buf);
+    uint8_t buf[129];                       // +1 byte for null terminator
+    size_t len = sizeof(buf) - 1;           // Reserve space for '\0'
     CoapClientError err = get(serverIP, serverPort, uriPath, buf, len);
     if (err != COAP_CLIENT_OK) return err;
 

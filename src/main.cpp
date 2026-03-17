@@ -32,6 +32,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <esp_system.h>
+#include <atomic>
 #include "soc/soc.h"
 #include "soc/rtc_cntl_reg.h"
 
@@ -113,15 +114,15 @@ static char _apSSID[32];
 
 static bool    _loraReady    = false;
 static bool    _gwLoraReady  = false;   // Gateway LoRa status (set in initGateway)
-static bool    _relayBusy    = false;
+static std::atomic<bool> _relayBusy{false};        // Accessed from Core 0 + Core 1
 static uint8_t _relayCmdId   = 0;
 
 // ─── Deep sleep manager (leaf/relay only) ────────────────────
 DeepSleepManager deepSleepMgr;
 
 // ─── Relay cached-image serving state ────────────────────────
-static bool     _relayCachedServing  = false;   // Currently serving cached images?
-static uint32_t _relayCachedStartMs  = 0;       // When we started serving
+static std::atomic<bool>     _relayCachedServing{false};   // Accessed from Core 0 + Core 1
+static std::atomic<uint32_t> _relayCachedStartMs{0};       // When we started serving
 static constexpr uint32_t RELAY_CACHED_TIMEOUT_MS = 120000;  // Auto-cleanup after 2 min
 
 // ─── Gateway timing ───────────────────────────────────────────

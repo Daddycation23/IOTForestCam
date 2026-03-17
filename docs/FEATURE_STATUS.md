@@ -69,6 +69,15 @@
 - **Tests:** `test/test_coap_block/` (15 unit tests)
 - **Test Guide:** [docs/COAP_OPTIMIZATION_SETUP.md](COAP_OPTIMIZATION_SETUP.md)
 
+### 11b. Critical Bugfixes (Code Review)
+- **Branch:** `feature/coap-optimization`
+- **Description:** Fixed 4 bugs found via code review against `ref/code-checker.md`:
+  1. **CRITICAL — Relay harvest queue item size mismatch:** `xRelayHarvestQueue` created with `sizeof(uint8_t)` (1 byte) but sent/received `HarvestCmdPacket` (~38 bytes), causing memory corruption. Fixed to `sizeof(HarvestCmdPacket)`.
+  2. **HIGH — Buffer overflow in `CoapClient::verifyChecksum()`:** Writing `'\0'` at `buf[128]` when buf was 128 bytes. Fixed by allocating 129 bytes and limiting read to 128.
+  3. **HIGH — Blocking `delay()` in FreeRTOS task:** `HarvestLoop::_doConnect()` used `delay(250)` instead of `vTaskDelay()`, starving Core 1 scheduler during WiFi connect. Fixed.
+  4. **HIGH — Thread-unsafe shared variables:** `_relayBusy`, `_relayCachedServing`, `_relayCachedStartMs` accessed from both cores without synchronization. Changed to `std::atomic`.
+- **Key Files:** `src/TaskConfig.cpp`, `src/CoapClient.cpp`, `src/HarvestLoop.cpp`, `src/main.cpp`
+
 ---
 
 ### 12. Deep Sleep + Two-Step Wake Protocol
