@@ -11,6 +11,7 @@
  */
 
 #include "HarvestLoop.h"
+#include "TaskConfig.h"
 
 static const char* TAG = "Harvest";
 
@@ -141,12 +142,18 @@ void HarvestLoop::_enterState(HarvestState newState) {
 void HarvestLoop::_doStart() {
     Serial.println("\n╔══════════════════════════════════════╗");
     Serial.println("║     HARVEST CYCLE STARTING           ║");
-    Serial.printf( "║     Nodes registered: %u              ║\n", _registry.activeCount());
+    if (registryLock()) {
+        Serial.printf( "║     Nodes registered: %u              ║\n", _registry.activeCount());
+        registryUnlock();
+    }
     Serial.println("╚══════════════════════════════════════╝\n");
 
     _stats.reset();
     _cycleStartMs = millis();
-    _registry.resetHarvestFlags();
+    if (registryLock()) {
+        _registry.resetHarvestFlags();
+        registryUnlock();
+    }
     _relayHarvesting = false;
 
     // If AODV is available, do a route discovery first
@@ -189,12 +196,15 @@ void HarvestLoop::_doDisconnect() {
     // Put LoRa into standby to reduce power draw before WiFi activates.
     // This prevents brownout crashes when WiFi + LoRa RX + SD are all active.
     if (_loraRadio) {
-        _loraRadio->standby();
+        if (xSemaphoreTake(xLoRaMutex, MUTEX_TIMEOUT) == pdTRUE) {
+            _loraRadio->standby();
+            xSemaphoreGive(xLoRaMutex);
+        }
     }
 
     WiFi.disconnect(true);
     WiFi.mode(WIFI_STA);
-    delay(500);
+    vTaskDelay(pdMS_TO_TICKS(500));
 
     log_d("%s: WiFi disconnected", TAG);
     _enterState(HARVEST_CONNECT);
@@ -213,7 +223,7 @@ void HarvestLoop::_doConnect() {
         uint32_t wifiStart = millis();
         while (WiFi.status() != WL_CONNECTED &&
                millis() - wifiStart < HARVEST_WIFI_TIMEOUT_MS) {
-            delay(250);
+            vTaskDelay(pdMS_TO_TICKS(250));
             Serial.print(".");
         }
         Serial.println();
@@ -233,8 +243,17 @@ void HarvestLoop::_doConnect() {
         return;
     }
 
-    // Get next unharvested node
-    if (!_registry.getNextToHarvest(_currentNode)) {
+    // Get next unharvested node (registry is shared with Core 0 beacon updates)
+    bool hasNext = false;
+    bool isMultiHop = false;
+    if (registryLock()) {
+        hasNext = _registry.getNextToHarvest(_currentNode);
+        if (hasNext && _aodvRouter) {
+            isMultiHop = _registry.isMultiHop(_currentNode.nodeId);
+        }
+        registryUnlock();
+    }
+    if (!hasNext) {
         log_i("%s: No more nodes to harvest", TAG);
         _enterState(HARVEST_DONE);
         return;
@@ -243,7 +262,7 @@ void HarvestLoop::_doConnect() {
     _stats.nodesAttempted++;
 
     // ── Check if this node needs multi-hop harvesting ────────
-    if (_aodvRouter && _registry.isMultiHop(_currentNode.nodeId)) {
+    if (isMultiHop) {
         Serial.printf("\n--- Node %s is MULTI-HOP (%u hops) — using relay ---\n",
                       _currentNode.ssid, _currentNode.hopCount);
         _enterState(HARVEST_RELAY_CMD);
@@ -344,8 +363,8 @@ void HarvestLoop::_doRelayCmd() {
     uint8_t buf[64];
     uint8_t len = cmd.serialize(buf, sizeof(buf));
     if (len > 0) {
-        _loraRadio->send(buf, len);
-        _loraRadio->startReceive();
+        loraSendSafe(buf, len);
+        loraStartReceiveSafe();
         Serial.printf("[%s] HARVEST_CMD sent to relay %s for leaf %s (cmdId=%u)\n",
                       TAG, _relaySSID, _currentNode.ssid, _pendingCmdId);
     }
@@ -543,7 +562,7 @@ void HarvestLoop::_doDone() {
 
     // Restart LoRa RX for beacon listening after harvest
     if (_loraRadio) {
-        _loraRadio->startReceive();
+        loraStartReceiveSafe();
     }
 
     Serial.println("\n╔══════════════════════════════════════╗");

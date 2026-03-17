@@ -4,6 +4,7 @@
  */
 
 #include "ElectionManager.h"
+#include "TaskConfig.h"
 
 static const char* TAG = "Election";
 
@@ -215,8 +216,8 @@ void ElectionManager::_sendElectionPacket(uint8_t type, uint8_t repeat, uint32_t
 
     _txLen = pkt.serialize(_txBuf, sizeof(_txBuf));
     if (_txLen > 0) {
-        _radio.send(_txBuf, _txLen);
-        _radio.startReceive();
+        loraSendSafe(_txBuf, _txLen);
+        loraStartReceiveSafe();
         _lastTxMs = millis();
         _txRemaining = repeat - 1;
         _txGapMs = gap;
@@ -227,8 +228,8 @@ void ElectionManager::_tickTxRetransmit() {
     if (_txRemaining == 0) return;
     if (millis() - _lastTxMs < _txGapMs) return;
 
-    _radio.send(_txBuf, _txLen);
-    _radio.startReceive();
+    loraSendSafe(_txBuf, _txLen);
+    loraStartReceiveSafe();
     _lastTxMs = millis();
     _txRemaining--;
 }

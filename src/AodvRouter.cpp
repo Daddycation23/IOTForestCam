@@ -10,6 +10,7 @@
  */
 
 #include "AodvRouter.h"
+#include "TaskConfig.h"
 
 static const char* TAG = "AODV";
 
@@ -153,7 +154,7 @@ void AodvRouter::handleRREQ(const RreqPacket& rreq, float rssi) {
         uint8_t len = rrep.serialize(buf, sizeof(buf));
         if (len > 0) {
             // Small random delay to avoid collision with other responders
-            delay(random(AODV_RREQ_BACKOFF_MIN, AODV_RREQ_BACKOFF_MAX));
+            vTaskDelay(pdMS_TO_TICKS(random(AODV_RREQ_BACKOFF_MIN, AODV_RREQ_BACKOFF_MAX)));
             _broadcast(buf, len);
         }
         return;
@@ -179,7 +180,7 @@ void AodvRouter::handleRREQ(const RreqPacket& rreq, float rssi) {
         uint8_t buf[64];
         uint8_t len = rrep.serialize(buf, sizeof(buf));
         if (len > 0) {
-            delay(random(AODV_RREQ_BACKOFF_MIN, AODV_RREQ_BACKOFF_MAX));
+            vTaskDelay(pdMS_TO_TICKS(random(AODV_RREQ_BACKOFF_MIN, AODV_RREQ_BACKOFF_MAX)));
             _broadcast(buf, len);
         }
         return;
@@ -199,7 +200,7 @@ void AodvRouter::handleRREQ(const RreqPacket& rreq, float rssi) {
     uint8_t buf[64];
     uint8_t len = fwd.serialize(buf, sizeof(buf));
     if (len > 0) {
-        delay(random(AODV_RREQ_BACKOFF_MIN, AODV_RREQ_BACKOFF_MAX));
+        vTaskDelay(pdMS_TO_TICKS(random(AODV_RREQ_BACKOFF_MIN, AODV_RREQ_BACKOFF_MAX)));
         _broadcast(buf, len);
         Serial.printf("[%s] RREQ rebroadcast (hops=%u)\n", TAG, newHopCount);
     }
@@ -588,9 +589,8 @@ void AodvRouter::_expireRreqCache() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 void AodvRouter::_broadcast(const uint8_t* data, uint8_t len) {
-    _radio.send(data, len);
-    // Resume receive mode after TX
-    _radio.startReceive();
+    loraSendSafe(data, len);
+    loraStartReceiveSafe();
 }
 
 bool AodvRouter::_isSelf(const uint8_t id[6]) const {

@@ -32,6 +32,8 @@
  */
 
 #include "CoapClient.h"
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 static const char* TAG = "CoapClient";
 
@@ -359,7 +361,7 @@ CoapClientError CoapClient::_sendAndWait(CoapMessage& request,
                     // Not our response — keep waiting
                 }
             }
-            delay(1);  // Yield to RTOS
+            vTaskDelay(1);  // Yield to RTOS
         }
 
         log_w("%s: Timeout attempt %u/%u for msgId=%u",
