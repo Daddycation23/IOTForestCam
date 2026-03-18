@@ -22,3 +22,15 @@ If you have any question about the project, ask the user so that you can underst
 - Use test-driven development (TDD): write tests before or alongside implementation.
 - For each feature completed, update `docs/FEATURE_STATUS.md` and write a testing guide in `docs/`.
 - For each feature implemented, update the IOT Design Review Report (`ref/IOT Design Review Report.docx`) to track progress.
+
+## Documentation
+
+- Documents must always be updated to contain the latest changes so they serve as accurate context for future sessions.
+- After every feature or bugfix, update ALL docs that reference changed behavior (FEATURE_STATUS.md, setup guides, CLAUDE.md, design specs).
+- If a design changes existing behavior (e.g., role assignment), update every doc that references the old behavior.
+
+## Hardware
+
+- All ESP32 nodes have SD cards attached. Every node acts as a camera.
+- Images are never deleted from source — harvesting is a copy operation.
+- Gateway also takes pictures and copies its own `/images/` to `/received/` locally.

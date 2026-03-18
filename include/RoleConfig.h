@@ -1,16 +1,16 @@
 /**
  * @file RoleConfig.h
- * @brief Dynamic role selection and NVS persistence for IOT Forest Cam
+ * @brief Role selection: auto-negotiation (default) or manual BOOT button override
  *
- * Provides a boot-time OLED menu (5-second window) that lets the user
- * cycle through LEAF / RELAY / GATEWAY by pressing the built-in BOOT
- * button (GPIO 0, active-low).  The selected role is persisted to NVS
- * via Arduino Preferences so it survives power cycles.
+ * Boot behavior:
+ *   1. If BOOT button is held during first 2 seconds → legacy 5-second menu
+ *   2. If not held → auto-negotiate (all nodes start as LEAF, election decides gateway)
  *
  * Usage in main.cpp setup():
  *   Wire.begin(OLED_SDA, OLED_SCL);
  *   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
- *   g_role = RoleConfig::selectRole(display);   // shows 5-second menu
+ *   bool manual = false;
+ *   g_role = RoleConfig::determineRole(display, manual);
  *
  * @author  CS Group 2
  * @date    2026
@@ -37,23 +37,38 @@
 static constexpr uint32_t ROLE_SELECT_TIMEOUT_MS = 5000;  ///< Auto-confirm after 5 s
 static constexpr uint32_t ROLE_DEBOUNCE_MS       = 50;    ///< Min press duration
 static constexpr uint32_t ROLE_BTN_COOLDOWN_MS   = 300;   ///< Min time between presses
+static constexpr uint32_t ROLE_BOOT_CHECK_MS     = 2000;  ///< Window to hold BOOT for manual
 
 // ─── RoleConfig ──────────────────────────────────────────────
 
 class RoleConfig {
 public:
     /**
-     * Run the boot-time role selection menu.
+     * Determine role: auto-negotiate or manual override.
      *
-     * Displays the current role on the OLED for up to ROLE_SELECT_TIMEOUT_MS.
-     * Each BOOT button press cycles: LEAF → RELAY → GATEWAY → LEAF.
-     * Pressing resets the countdown timer so the user has a fresh 5 s.
-     * On timeout, the displayed role is confirmed, saved to NVS, and returned.
+     * Checks if BOOT button is held during first ROLE_BOOT_CHECK_MS.
+     *   - If held: shows legacy 5-second menu for manual role selection.
+     *   - If not held: returns NODE_ROLE_LEAF (auto-negotiate mode).
      *
-     * @param display  Reference to an already-initialised SSD1306 display.
-     * @return The confirmed NodeRole.
+     * @param display     Reference to an already-initialised SSD1306 display.
+     * @param[out] manual Set to true if user chose manual override.
+     * @return The selected NodeRole (LEAF for auto, or user's choice for manual).
+     */
+    static NodeRole determineRole(Adafruit_SSD1306& display, bool& manual);
+
+    /**
+     * Run the boot-time role selection menu (legacy manual mode).
+     * Called internally by determineRole when BOOT is held.
      */
     static NodeRole selectRole(Adafruit_SSD1306& display);
+
+    /**
+     * Check if BOOT button is held during initial window.
+     * Shows a brief OLED prompt while checking.
+     * @param display  OLED to show "Hold BOOT for manual..." prompt.
+     * @return true if button was held during the check window.
+     */
+    static bool checkBootHeld(Adafruit_SSD1306& display);
 
     /**
      * Load the role stored in NVS.
@@ -64,24 +79,14 @@ public:
     /** Persist role to NVS. */
     static void saveRole(NodeRole role);
 
-    /** Human-readable name: "LEAF", "RELAY", or "GATEWAY". */
+    /** Human-readable name: "LEAF", "LEAF+RELAY", or "GATEWAY". */
     static const char* roleName(NodeRole role);
 
 private:
-    /**
-     * Render the selection screen.
-     * @param remainMs  Milliseconds remaining before auto-confirm.
-     */
     static void _drawMenu(Adafruit_SSD1306& display,
                           NodeRole role, uint32_t remainMs);
 
-    /** Advance to next role in the cycle: LEAF → RELAY → GATEWAY → LEAF. */
     static NodeRole _nextRole(NodeRole role);
-
-    /**
-     * Read GPIO 0 with debounce and cooldown.
-     * Returns true once per clean button press (waits for release).
-     */
     static bool _buttonPressed();
 };
 
