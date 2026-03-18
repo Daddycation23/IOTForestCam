@@ -127,6 +127,10 @@ public:
     /** Get stats from the last completed cycle. */
     const HarvestCycleStats& lastCycleStats() const { return _stats; }
 
+    /** Set callback to check if a node should be skipped (blocked). */
+    typedef bool (*NodeBlockedCb)(const uint8_t nodeId[6]);
+    void setNodeBlockedCallback(NodeBlockedCb cb) { _nodeBlockedCb = cb; }
+
 private:
     NodeRegistry&  _registry;
     CoapClient&    _coapClient;
@@ -147,6 +151,7 @@ private:
     bool           _relayAckReceived;   ///< Have we received the ACK?
     HarvestAckPacket _lastRelayAck;     ///< Last received ACK
     char           _relaySSID[21];      ///< SSID of the relay node to connect to
+    NodeBlockedCb  _nodeBlockedCb;      ///< Optional callback to check if node is blocked
 
     /** Transition to a new state and record entry time. */
     void _enterState(HarvestState newState);

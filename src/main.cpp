@@ -62,6 +62,9 @@
 // ── Deep sleep management ───────────────────────────────────
 #include "DeepSleepManager.h"
 
+// ── Serial command parsing ──────────────────────────────────
+#include "SerialCmd.h"
+
 // ─── LILYGO T3-S3 V1.2 Pin Definitions ──────────────────────
 #define OLED_SDA 18
 #define OLED_SCL 17
@@ -95,6 +98,9 @@ HarvestLoop  harvestLoop(registry, coapClient);
 // ─── Election manager ────────────────────────────────────────
 // MUST be after registry, harvestLoop, aodvRouter — C++ file-scope init order
 ElectionManager electionMgr(loraRadio, registry, harvestLoop, aodvRouter);
+
+// ─── Serial command handler ──────────────────────────────────
+SerialCmd serialCmd;
 
 // ─── Leaf / Relay objects ─────────────────────────────────────
 // CoapServer stores StorageReader& so storage must come first.
@@ -393,6 +399,9 @@ static void initGateway() {
         aodvRouter.begin(myMac);
         aodvRouter.setRouteDiscoveredCallback(onRouteDiscovered);
         harvestLoop.setAodv(&aodvRouter, &loraRadio);
+        harvestLoop.setNodeBlockedCallback([](const uint8_t nodeId[6]) -> bool {
+            return serialCmd.isNodeBlocked(nodeId);
+        });
         electionMgr.begin(myMac, NODE_ROLE_GATEWAY);
     }
 
@@ -1239,6 +1248,9 @@ normal_boot:
 }
 
 void loop() {
+    // ── Serial commands (block/unblock/list) ─────────────────
+    serialCmd.tick();
+
     // ── Update active role from election manager ─────────────
     _activeRole = electionMgr.activeRole();
 

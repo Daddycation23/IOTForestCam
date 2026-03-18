@@ -33,6 +33,7 @@ HarvestLoop::HarvestLoop(NodeRegistry& registry, CoapClient& coapClient)
     , _relayCmdIdCounter(0)
     , _pendingCmdId(0)
     , _relayAckReceived(false)
+    , _nodeBlockedCb(nullptr)
 {
     _stats.reset();
     memset(_relaySSID, 0, sizeof(_relaySSID));
@@ -284,6 +285,17 @@ void HarvestLoop::_doConnect() {
     if (!hasNext) {
         log_i("%s: No more nodes to harvest", TAG);
         _enterState(HARVEST_DONE);
+        return;
+    }
+
+    // Skip blocked nodes
+    if (_nodeBlockedCb && _nodeBlockedCb(_currentNode.nodeId)) {
+        Serial.printf("[%s] Node %s is BLOCKED — skipping\n", TAG, _currentNode.ssid);
+        if (registryLock()) {
+            _registry.markHarvested(_currentNode.nodeId);
+            registryUnlock();
+        }
+        _enterState(HARVEST_DISCONNECT);
         return;
     }
 
