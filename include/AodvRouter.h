@@ -46,6 +46,7 @@ struct RouteEntry {
     uint32_t expiryMs;          ///< millis() when this route expires
     bool     active;            ///< Slot in use?
     bool     validSeqNum;       ///< Have a valid sequence number?
+    bool     relayed;           ///< We forwarded RREP for this route (we're an intermediate hop)
 };
 
 // ─── Route Discovery Callback ──────────────────────────────
@@ -115,6 +116,12 @@ public:
     void dumpRoutes() const;
     uint16_t mySeqNum() const { return _mySeqNum; }
 
+    /** True if this node is forwarding traffic for at least one route. */
+    bool isRelaying() const { return _isRelaying; }
+
+    /** Number of active routes this node is relaying for. */
+    uint8_t relayingForCount() const { return _relayingForCount; }
+
     /** Set callback for route discovery events. */
     void setRouteDiscoveredCallback(RouteDiscoveredCb cb) { _routeDiscoveredCb = cb; }
 
@@ -147,6 +154,10 @@ private:
 
     // ── Callback ────────────────────────────────────────────
     RouteDiscoveredCb _routeDiscoveredCb;
+
+    // ── Relay Detection ─────────────────────────────────────
+    bool    _isRelaying;        ///< True if forwarding at least one route
+    uint8_t _relayingForCount;  ///< Number of active relayed routes
 
     // ── Route Table Helpers ─────────────────────────────────
     int8_t _findRoute(const uint8_t destId[6]) const;

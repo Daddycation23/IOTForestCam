@@ -26,6 +26,8 @@ AodvRouter::AodvRouter(LoRaRadio& radio)
     , _discoveryPending(false)
     , _discoveryStartMs(0)
     , _routeDiscoveredCb(nullptr)
+    , _isRelaying(false)
+    , _relayingForCount(0)
 {
     memset(_myId, 0, 6);
     memset(_routes, 0, sizeof(_routes));
@@ -70,6 +72,15 @@ void AodvRouter::tick() {
                      _routes[i].destId[0], _routes[i].destId[1], _routes[i].destId[2],
                      _routes[i].destId[3], _routes[i].destId[4], _routes[i].destId[5]);
             Serial.printf("[%s] Route to %s expired\n", TAG, idStr);
+
+            if (_routes[i].relayed && _relayingForCount > 0) {
+                _relayingForCount--;
+                if (_relayingForCount == 0) {
+                    _isRelaying = false;
+                    Serial.printf("[%s] All relayed routes expired — no longer relaying\n", TAG);
+                }
+            }
+
             _routes[i].active = false;
         }
     }
@@ -275,6 +286,15 @@ void AodvRouter::handleRREP(const RrepPacket& rrep) {
     if (len > 0) {
         _broadcast(buf, len);
         Serial.printf("[%s] RREP forwarded toward originator (hops=%u)\n", TAG, newHopCount);
+
+        // Mark the forward route as relayed — we're an intermediate hop
+        int8_t fwdIdx = _findRoute(rrep.destId);
+        if (fwdIdx >= 0 && !_routes[fwdIdx].relayed) {
+            _routes[fwdIdx].relayed = true;
+            _relayingForCount++;
+            _isRelaying = true;
+            Serial.printf("[%s] Now relaying for %u route(s)\n", TAG, _relayingForCount);
+        }
     }
 }
 
@@ -297,10 +317,18 @@ void AodvRouter::handleRERR(const RerrPacket& rerr) {
                      rerr.entries[i].destId[4], rerr.entries[i].destId[5]);
             Serial.printf("[%s] RERR: Route to %s invalidated\n", TAG, idStr);
 
+            if (_routes[idx].relayed && _relayingForCount > 0) {
+                _relayingForCount--;
+            }
             _routes[idx].active = false;
             _routes[idx].destSeqNum = rerr.entries[i].destSeqNum;
             affected = true;
         }
+    }
+
+    if (_relayingForCount == 0 && _isRelaying) {
+        _isRelaying = false;
+        Serial.printf("[%s] All relayed routes invalidated — no longer relaying\n", TAG);
     }
 
     // Propagate RERR if we were affected
@@ -392,8 +420,16 @@ void AodvRouter::notifyLinkBreak(const uint8_t brokenNodeId[6]) {
                 rerr.entries[rerr.destCount].destSeqNum = _routes[i].destSeqNum;
                 rerr.destCount++;
             }
+            if (_routes[i].relayed && _relayingForCount > 0) {
+                _relayingForCount--;
+            }
             _routes[i].active = false;
         }
+    }
+
+    if (_relayingForCount == 0 && _isRelaying) {
+        _isRelaying = false;
+        Serial.printf("[%s] All relayed routes broken — no longer relaying\n", TAG);
     }
 
     if (rerr.destCount > 0) {
@@ -535,6 +571,7 @@ void AodvRouter::_upsertRoute(const uint8_t destId[6], const uint8_t nextHopId[6
     r.expiryMs    = millis() + (uint32_t)lifetimeSec * 1000;
     r.active      = true;
     r.validSeqNum = true;
+    r.relayed     = false;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
