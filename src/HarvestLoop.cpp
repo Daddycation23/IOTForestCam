@@ -12,6 +12,7 @@
 
 #include "HarvestLoop.h"
 #include "TaskConfig.h"
+#include "DeepSleepManager.h"   // rtcBootCount
 
 static const char* TAG = "Harvest";
 
@@ -507,11 +508,15 @@ void HarvestLoop::_doDownload() {
     for (uint8_t i = 0; i < imageCount; i++) {
         Serial.printf("  === Download /image/%u ===\n", i);
 
-        char outPath[64];
+        char outPath[96];
         const char* savePath = nullptr;
         if (sdAvailable) {
-            snprintf(outPath, sizeof(outPath), "%s/node_%s_img_%03u.jpg",
-                     HARVEST_SAVE_DIR, nodePrefix, i);
+            uint32_t uptimeSec = millis() / 1000;
+            snprintf(outPath, sizeof(outPath),
+                     "%s/node_%s_boot%03lu_%06lus_img_%03u.jpg",
+                     HARVEST_SAVE_DIR, nodePrefix,
+                     (unsigned long)rtcBootCount,
+                     (unsigned long)uptimeSec, i);
             savePath = outPath;
         }
 
