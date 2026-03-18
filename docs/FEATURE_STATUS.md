@@ -91,7 +91,7 @@
 
 ### 13. Auto-Role Negotiation
 - **Branch:** `feature/auto-role`
-- **Status:** In progress (step 5/7 complete)
+- **Status:** In progress (step 6/7 complete)
 - **Description:** Nodes auto-negotiate roles at boot instead of manual selection. All nodes start as LEAF; a Bully election (with 15s startup grace period) promotes the highest-priority node to gateway. BOOT button override for manual mode.
 - **Key Changes (Step 1 — Boot Flow):** `RoleConfig::determineRole()` with auto-negotiate default, `checkBootHeld()` for manual override
 - **Key Changes (Step 2 — Election Guard Removal):** ElectionManager now allows LEAF nodes to participate in election, startup grace period before first election, demotion returns to LEAF not RELAY, main.cpp uses `determineRole()`
@@ -127,6 +127,6 @@ coap-implemented
   └── feature/freertos (e14776c) ................ [Done]
         └── feature/coap-optimization (5458b43) . [Done]
               └── feature/deep-sleep ............ [Done]
-                    └── feature/auto-role ....... [In Progress — step 5/7]
+                    └── feature/auto-role ....... [In Progress — step 6/7]
                           └── feature/dashboard . [Planned]
 ```

@@ -888,7 +888,7 @@ static void taskLoRaLeafRelay(void* param) {
             beacon.packetType = BEACON_TYPE_BEACON;
             beacon.ttl = 2;
             WiFi.macAddress(beacon.nodeId);
-            beacon.nodeRole   = (g_role == NODE_ROLE_RELAY)
+            beacon.nodeRole   = (g_role == NODE_ROLE_RELAY || aodvRouter.isRelaying())
                                     ? NODE_ROLE_RELAY : NODE_ROLE_LEAF;
             beacon.ssidLen    = strlen(_apSSID);
             if (beacon.ssidLen > BEACON_MAX_SSID) beacon.ssidLen = BEACON_MAX_SSID;
@@ -1335,7 +1335,7 @@ void loop() {
         } else if (es == ELECT_RECLAIMED) {
             display.fillRect(0, 40, 128, 8, SSD1306_BLACK);
             display.setCursor(0, 40);
-            display.println("RECLAIMED -> RELAY");
+            display.println("RECLAIMED -> LEAF");
         }
 
         display.display();
