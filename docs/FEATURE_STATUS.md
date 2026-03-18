@@ -91,13 +91,17 @@
 
 ### 13. Auto-Role Negotiation
 - **Branch:** `feature/auto-role`
-- **Status:** In progress (step 6/7 complete)
+- **Status:** Complete (steps 1-7)
 - **Description:** Nodes auto-negotiate roles at boot instead of manual selection. All nodes start as LEAF; a Bully election (with 15s startup grace period) promotes the highest-priority node to gateway. BOOT button override for manual mode.
 - **Key Changes (Step 1 — Boot Flow):** `RoleConfig::determineRole()` with auto-negotiate default, `checkBootHeld()` for manual override
 - **Key Changes (Step 2 — Election Guard Removal):** ElectionManager now allows LEAF nodes to participate in election, startup grace period before first election, demotion returns to LEAF not RELAY, main.cpp uses `determineRole()`
 - **Key Changes (Step 3 — Relay Detection):** AodvRouter tracks relay state via `isRelaying()`/`relayingForCount()`. RREP forwarding sets relay flag; route expiry/RERR/link break clears it. RouteEntry gains `relayed` field.
-- **Key Files:** `include/RoleConfig.h`, `src/RoleConfig.cpp`, `include/ElectionManager.h`, `src/ElectionManager.cpp`, `include/AodvRouter.h`, `src/AodvRouter.cpp`, `src/main.cpp`
+- **Key Changes (Step 4 — Filename Format):** Harvest filenames include boot count and uptime: `node_AABB_boot005_003672s_img_000.jpg`
+- **Key Changes (Step 5 — Serial Commands):** New SerialCmd module for `block`/`unblock`/`list` commands. HarvestLoop skips blocked nodes via callback.
+- **Key Changes (Step 6 — Integration):** Beacon nodeRole reflects relay detection, OLED shows correct status.
+- **Key Files:** `include/RoleConfig.h`, `src/RoleConfig.cpp`, `include/ElectionManager.h`, `src/ElectionManager.cpp`, `include/AodvRouter.h`, `src/AodvRouter.cpp`, `include/SerialCmd.h`, `src/SerialCmd.cpp`, `include/HarvestLoop.h`, `src/HarvestLoop.cpp`, `src/main.cpp`
 - **Tests:** `test/test_auto_role/` (23 unit tests)
+- **Test Guide:** [docs/AUTO_ROLE_SETUP.md](AUTO_ROLE_SETUP.md)
 
 ---
 
@@ -127,6 +131,6 @@ coap-implemented
   └── feature/freertos (e14776c) ................ [Done]
         └── feature/coap-optimization (5458b43) . [Done]
               └── feature/deep-sleep ............ [Done]
-                    └── feature/auto-role ....... [In Progress — step 6/7]
+                    └── feature/auto-role ....... [Done]
                           └── feature/dashboard . [Planned]
 ```
