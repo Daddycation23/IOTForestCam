@@ -1201,9 +1201,12 @@ normal_boot:
             delay(2000);
         }
 
-        // ── Role selection ──────────────────────────────────────
-        g_role = RoleConfig::selectRole(display);
-        Serial.printf("\n[Role] Booting as: %s\n\n", RoleConfig::roleName(g_role));
+        // ── Role selection (auto-negotiate or manual BOOT override) ──
+        bool manualOverride = false;
+        g_role = RoleConfig::determineRole(display, manualOverride);
+        Serial.printf("\n[Role] Booting as: %s (%s)\n\n",
+                      RoleConfig::roleName(g_role),
+                      manualOverride ? "manual" : "auto-negotiate");
     }
 
     // ── Initialize FreeRTOS primitives ───────────────────────

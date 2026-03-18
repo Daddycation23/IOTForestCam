@@ -13,7 +13,7 @@ ElectionManager::ElectionManager(LoRaRadio& radio, NodeRegistry& registry,
     : _radio(radio), _registry(registry), _harvest(harvest), _aodv(aodv),
       _myPriority(0), _originalRole(NODE_ROLE_LEAF), _activeRole(NODE_ROLE_LEAF),
       _state(ELECT_IDLE), _stateEnteredMs(0), _electionId(0),
-      _currentElectionId(0), _lastGatewayBeaconMs(0), _gatewayEverSeen(false),
+      _currentElectionId(0), _bootMs(0), _lastGatewayBeaconMs(0), _gatewayEverSeen(false),
       _txRemaining(0), _lastTxMs(0), _txGapMs(0), _txLen(0),
       _backoffMs(0), _cooldownUntilMs(0)
 {
@@ -27,6 +27,7 @@ void ElectionManager::begin(const uint8_t mac[6], NodeRole originalRole) {
     _activeRole   = originalRole;
     _myPriority   = ElectionPacket::macToPriority(mac);
     _electionId   = (uint16_t)(millis() & 0xFFFF);
+    _bootMs       = millis();
     _lastGatewayBeaconMs = millis();
     _state        = ELECT_IDLE;
     _stateEnteredMs = millis();
@@ -37,7 +38,8 @@ void ElectionManager::begin(const uint8_t mac[6], NodeRole originalRole) {
 }
 
 void ElectionManager::tick() {
-    if (_originalRole != NODE_ROLE_RELAY) return;
+    // Gateway nodes never participate in election (they ARE the gateway)
+    if (_originalRole == NODE_ROLE_GATEWAY) return;
 
     _tickTxRetransmit();
 
@@ -71,7 +73,8 @@ void ElectionManager::onElectionPacket(const uint8_t* buf, uint8_t len) {
     ElectionPacket pkt;
     if (!pkt.parse(buf, len)) return;
 
-    if (_originalRole != NODE_ROLE_RELAY) return;
+    // Gateway nodes ignore election packets (they broadcast GW_RECLAIM instead)
+    if (_originalRole == NODE_ROLE_GATEWAY) return;
 
     if (memcmp(pkt.senderId, _mac, 6) == 0) return;
 
@@ -147,7 +150,20 @@ void ElectionManager::onElectionPacket(const uint8_t* buf, uint8_t len) {
 
 void ElectionManager::_tickIdle() {
     if (millis() < _cooldownUntilMs) return;
-    if (!_gatewayEverSeen) return;
+
+    // Startup grace period: wait before first election to allow discovery
+    if (!_gatewayEverSeen && (millis() - _bootMs) < ELECTION_STARTUP_GRACE_MS) {
+        return;
+    }
+
+    // After grace period with no gateway seen, OR gateway beacon timed out
+    if (!_gatewayEverSeen) {
+        Serial.printf("[%s] Grace period expired, no gateway — starting election\n", TAG);
+        _electionId++;
+        _currentElectionId = _electionId;
+        _enterState(ELECT_ELECTION_START);
+        return;
+    }
 
     if (millis() - _lastGatewayBeaconMs >= ELECTION_GW_TIMEOUT_MS) {
         Serial.printf("[%s] Gateway timeout (%lu ms) — starting election\n",
@@ -193,7 +209,7 @@ void ElectionManager::_tickActingGateway() {
 }
 
 void ElectionManager::_tickReclaimed() {
-    _demoteToRelay();
+    _demoteToLeaf();
     _cooldownUntilMs = millis() + ELECTION_RECLAIM_COOLDOWN_MS;
     _lastGatewayBeaconMs = millis();
     _enterState(ELECT_IDLE);
@@ -251,14 +267,14 @@ void ElectionManager::_promoteToGateway() {
     _harvest.abortCycle();
 }
 
-void ElectionManager::_demoteToRelay() {
+void ElectionManager::_demoteToLeaf() {
     Serial.printf("\n[%s] ╔══════════════════════════════════╗\n", TAG);
-    Serial.printf("[%s] ║  DEMOTED BACK TO RELAY           ║\n", TAG);
+    Serial.printf("[%s] ║  DEMOTED BACK TO LEAF            ║\n", TAG);
     Serial.printf("[%s] ╚══════════════════════════════════╝\n\n", TAG);
 
     _harvest.abortCycle();
     _registry.reset();
-    _activeRole = NODE_ROLE_RELAY;
+    _activeRole = NODE_ROLE_LEAF;
 }
 
 const char* ElectionManager::stateStr() const {

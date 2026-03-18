@@ -89,9 +89,20 @@
 
 ---
 
+### 13. Auto-Role Negotiation
+- **Branch:** `feature/auto-role`
+- **Status:** In progress (step 2/7 complete)
+- **Description:** Nodes auto-negotiate roles at boot instead of manual selection. All nodes start as LEAF; a Bully election (with 15s startup grace period) promotes the highest-priority node to gateway. BOOT button override for manual mode.
+- **Key Changes (Step 1 — Boot Flow):** `RoleConfig::determineRole()` with auto-negotiate default, `checkBootHeld()` for manual override
+- **Key Changes (Step 2 — Election Guard Removal):** ElectionManager now allows LEAF nodes to participate in election, startup grace period before first election, demotion returns to LEAF not RELAY, main.cpp uses `determineRole()`
+- **Key Files:** `include/RoleConfig.h`, `src/RoleConfig.cpp`, `include/ElectionManager.h`, `src/ElectionManager.cpp`, `src/main.cpp`
+- **Tests:** `test/test_auto_role/` (23 unit tests)
+
+---
+
 ## In Progress
 
-### 13. Python Dashboard
+### 14. Python Dashboard
 - **Planned Branch:** `feature/dashboard`
 - **Description:** Laptop Python app using `aiocoap` + `tkinter` to pull and display images from gateway via CoAP.
 
@@ -115,5 +126,6 @@ coap-implemented
   └── feature/freertos (e14776c) ................ [Done]
         └── feature/coap-optimization (5458b43) . [Done]
               └── feature/deep-sleep ............ [Done]
-                    └── feature/dashboard ....... [Planned]
+                    └── feature/auto-role ....... [In Progress — step 2/7]
+                          └── feature/dashboard . [Planned]
 ```

@@ -1,13 +1,14 @@
 /**
  * @file ElectionManager.h
- * @brief Bully election algorithm for gateway failover
+ * @brief Bully election algorithm for gateway selection and failover
  *
- * Monitors gateway liveness via LoRa beacons. When the gateway is
- * absent for ELECTION_GW_TIMEOUT_MS, relays run a Bully election
- * to promote the highest-priority relay to acting gateway.
+ * All non-gateway nodes (LEAF and RELAY) participate in election.
+ * On boot, a startup grace period (ELECTION_STARTUP_GRACE_MS) allows
+ * beacon discovery before triggering election. If no gateway is heard
+ * after the grace period, the highest-priority node promotes to gateway.
  *
- * When the original gateway recovers, it broadcasts GW_RECLAIM and
- * the promoted relay steps back down.
+ * When a manually-assigned gateway recovers, it broadcasts GW_RECLAIM
+ * and the promoted node demotes back to LEAF.
  *
  * @author  CS Group 2
  * @date    2026
@@ -26,6 +27,7 @@
 
 // ─── Election Constants ──────────────────────────────────────
 static constexpr uint32_t ELECTION_GW_TIMEOUT_MS          = 90000;  // 3 missed beacons
+static constexpr uint32_t ELECTION_STARTUP_GRACE_MS       = 15000;  // Wait before first election
 static constexpr uint32_t ELECTION_BACKOFF_MIN_MS         = 200;
 static constexpr uint32_t ELECTION_BACKOFF_MAX_MS         = 800;
 static constexpr uint32_t ELECTION_COORDINATOR_TIMEOUT_MS = 5000;
@@ -79,6 +81,7 @@ private:
     uint16_t _electionId;
     uint16_t _currentElectionId;
 
+    uint32_t _bootMs;
     uint32_t _lastGatewayBeaconMs;
     bool     _gatewayEverSeen;
 
@@ -103,7 +106,7 @@ private:
     void _tickTxRetransmit();
     uint32_t _computeBackoff() const;
     void _promoteToGateway();
-    void _demoteToRelay();
+    void _demoteToLeaf();
 };
 
 #endif // ELECTION_MANAGER_H
