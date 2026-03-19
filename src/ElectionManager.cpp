@@ -13,7 +13,7 @@ ElectionManager::ElectionManager(LoRaRadio& radio, NodeRegistry& registry,
     : _radio(radio), _registry(registry), _harvest(harvest), _aodv(aodv),
       _myPriority(0), _originalRole(NODE_ROLE_LEAF), _activeRole(NODE_ROLE_LEAF),
       _state(ELECT_IDLE), _stateEnteredMs(0), _electionId(0),
-      _currentElectionId(0), _bootMs(0), _lastGatewayBeaconMs(0), _gatewayEverSeen(false),
+      _currentElectionId(0), _bootMs(0), _graceEndMs(0), _lastGatewayBeaconMs(0), _gatewayEverSeen(false),
       _txRemaining(0), _lastTxMs(0), _txGapMs(0), _txLen(0),
       _backoffMs(0), _cooldownUntilMs(0)
 {
@@ -28,6 +28,9 @@ void ElectionManager::begin(const uint8_t mac[6], NodeRole originalRole) {
     _myPriority   = ElectionPacket::macToPriority(mac);
     _electionId   = (uint16_t)(millis() & 0xFFFF);
     _bootMs       = millis();
+    uint32_t jitter = (mac[4] * 256 + mac[5]) % 5000;  // 0–5s based on MAC
+    _graceEndMs   = _bootMs + ELECTION_STARTUP_GRACE_MS + jitter;
+    Serial.printf("[%s] Grace period jitter: %lu ms (ends at %lu ms)\n", TAG, jitter, _graceEndMs);
     _lastGatewayBeaconMs = millis();
     _state        = ELECT_IDLE;
     _stateEnteredMs = millis();
@@ -63,8 +66,13 @@ void ElectionManager::onBeacon(const BeaconPacket& beacon) {
         _gatewayEverSeen = true;
 
         if (_state == ELECT_ACTING_GATEWAY) {
-            Serial.printf("[%s] Gateway beacon received while acting — reclaiming\n", TAG);
-            _enterState(ELECT_RECLAIMED);
+            uint32_t otherPriority = ElectionPacket::macToPriority(beacon.nodeId);
+            if (otherPriority >= _myPriority) {
+                Serial.printf("[%s] Higher-priority gateway beacon — yielding\n", TAG);
+                _enterState(ELECT_RECLAIMED);
+            } else {
+                Serial.printf("[%s] Lower-priority gateway beacon — staying (we outrank)\n", TAG);
+            }
         }
     }
 }
@@ -80,13 +88,14 @@ void ElectionManager::onElectionPacket(const uint8_t* buf, uint8_t len) {
 
     char idStr[24];
     pkt.senderIdToString(idStr, sizeof(idStr));
+    uint32_t senderPriority = ElectionPacket::macToPriority(pkt.senderId);
 
     switch (pkt.type) {
         case PKT_TYPE_ELECTION: {
             Serial.printf("[%s] ELECTION from %s (pri=0x%08lX)\n",
-                          TAG, idStr, pkt.priority);
+                          TAG, idStr, senderPriority);
 
-            if (pkt.priority < _myPriority) {
+            if (senderPriority < _myPriority) {
                 Serial.printf("[%s] Suppressing lower-priority candidate\n", TAG);
                 _sendElectionPacket(PKT_TYPE_SUPPRESS, ELECTION_TX_REPEAT, ELECTION_TX_GAP_MS);
 
@@ -94,7 +103,7 @@ void ElectionManager::onElectionPacket(const uint8_t* buf, uint8_t len) {
                     _currentElectionId = pkt.electionId;
                     _enterState(ELECT_ELECTION_START);
                 }
-            } else if (pkt.priority > _myPriority) {
+            } else if (senderPriority > _myPriority) {
                 if (_state == ELECT_WAITING || _state == ELECT_ELECTION_START) {
                     _enterState(ELECT_STOOD_DOWN);
                 }
@@ -104,9 +113,9 @@ void ElectionManager::onElectionPacket(const uint8_t* buf, uint8_t len) {
 
         case PKT_TYPE_SUPPRESS: {
             Serial.printf("[%s] SUPPRESS from %s (pri=0x%08lX)\n",
-                          TAG, idStr, pkt.priority);
+                          TAG, idStr, senderPriority);
 
-            if (pkt.priority > _myPriority) {
+            if (senderPriority > _myPriority) {
                 if (_state == ELECT_WAITING || _state == ELECT_ELECTION_START) {
                     _enterState(ELECT_STOOD_DOWN);
                 }
@@ -116,15 +125,16 @@ void ElectionManager::onElectionPacket(const uint8_t* buf, uint8_t len) {
 
         case PKT_TYPE_COORDINATOR: {
             Serial.printf("[%s] COORDINATOR from %s (pri=0x%08lX)\n",
-                          TAG, idStr, pkt.priority);
+                          TAG, idStr, senderPriority);
 
-            if (_state == ELECT_ACTING_GATEWAY && pkt.priority > _myPriority) {
+            if (_state == ELECT_ACTING_GATEWAY && senderPriority > _myPriority) {
                 Serial.printf("[%s] Yielding to higher-priority coordinator\n", TAG);
                 _enterState(ELECT_RECLAIMED);
             } else if (_state == ELECT_STOOD_DOWN || _state == ELECT_WAITING ||
                        _state == ELECT_ELECTION_START) {
                 Serial.printf("[%s] Coordinator announced — returning to IDLE\n", TAG);
                 _lastGatewayBeaconMs = millis();
+                _gatewayEverSeen = true;  // Coordinator IS the gateway now
                 _enterState(ELECT_IDLE);
             }
             break;
@@ -137,6 +147,7 @@ void ElectionManager::onElectionPacket(const uint8_t* buf, uint8_t len) {
                 _enterState(ELECT_RECLAIMED);
             } else {
                 _lastGatewayBeaconMs = millis();
+                _gatewayEverSeen = true;  // Original gateway is back
                 if (_state != ELECT_IDLE) {
                     _enterState(ELECT_IDLE);
                 }
@@ -151,8 +162,8 @@ void ElectionManager::onElectionPacket(const uint8_t* buf, uint8_t len) {
 void ElectionManager::_tickIdle() {
     if (millis() < _cooldownUntilMs) return;
 
-    // Startup grace period: wait before first election to allow discovery
-    if (!_gatewayEverSeen && (millis() - _bootMs) < ELECTION_STARTUP_GRACE_MS) {
+    // Startup grace period (with MAC-based jitter): wait before first election
+    if (!_gatewayEverSeen && millis() < _graceEndMs) {
         return;
     }
 
@@ -166,11 +177,16 @@ void ElectionManager::_tickIdle() {
     }
 
     if (millis() - _lastGatewayBeaconMs >= ELECTION_GW_TIMEOUT_MS) {
-        Serial.printf("[%s] Gateway timeout (%lu ms) — starting election\n",
-                      TAG, millis() - _lastGatewayBeaconMs);
-        _electionId++;
-        _currentElectionId = _electionId;
-        _enterState(ELECT_ELECTION_START);
+        // Stagger re-election by inverse priority: highest priority starts first
+        // This prevents simultaneous election when all nodes detect timeout together
+        uint32_t stagger = 3000 - (_myPriority % 3000);  // 0-3s, higher priority = shorter
+        if (millis() - _lastGatewayBeaconMs >= ELECTION_GW_TIMEOUT_MS + stagger) {
+            Serial.printf("[%s] Gateway timeout (stagger=%lu ms) — starting election\n",
+                          TAG, stagger);
+            _electionId++;
+            _currentElectionId = _electionId;
+            _enterState(ELECT_ELECTION_START);
+        }
     }
 }
 
@@ -227,7 +243,6 @@ void ElectionManager::_sendElectionPacket(uint8_t type, uint8_t repeat, uint32_t
     ElectionPacket pkt;
     pkt.type = type;
     memcpy(pkt.senderId, _mac, 6);
-    pkt.priority = _myPriority;
     pkt.electionId = _currentElectionId;
 
     _txLen = pkt.serialize(_txBuf, sizeof(_txBuf));

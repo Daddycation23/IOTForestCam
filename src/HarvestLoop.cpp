@@ -30,9 +30,10 @@ HarvestLoop::HarvestLoop(NodeRegistry& registry, CoapClient& coapClient)
     , _cycleStartMs(0)
     , _globalImageCounter(0)
     , _relayHarvesting(false)
+    , _routeDiscRreqSent(false)
     , _relayCmdIdCounter(0)
     , _pendingCmdId(0)
-    , _relayAckReceived(false)
+    , _relayAckReceived{false}
     , _nodeBlockedCb(nullptr)
 {
     _stats.reset();
@@ -53,13 +54,16 @@ void HarvestLoop::startCycle() {
         log_w("%s: Cannot start — already in state %s", TAG, stateStr());
         return;
     }
+    _routeDiscRreqSent = false;
     _enterState(HARVEST_START);
 }
 
 void HarvestLoop::onHarvestAck(const HarvestAckPacket& ack) {
     if (_state == HARVEST_RELAY_WAIT && ack.cmdId == _pendingCmdId) {
+        portENTER_CRITICAL(&_relayAckMux);
         _lastRelayAck = ack;
         _relayAckReceived = true;
+        portEXIT_CRITICAL(&_relayAckMux);
         Serial.printf("[%s] Relay ACK received: status=%s, images=%u\n",
                       TAG, HarvestAckPacket::statusToString(ack.status), ack.imageCount);
     }
@@ -176,18 +180,17 @@ void HarvestLoop::_doStart() {
 
 void HarvestLoop::_doRouteDiscovery() {
     // Broadcast RREQ once at the start of this state
-    static bool rreqSent = false;
-    if (!rreqSent) {
+    if (!_routeDiscRreqSent) {
         Serial.printf("[%s] Broadcasting RREQ for topology discovery...\n", TAG);
         _aodvRouter->discoverAll();
-        rreqSent = true;
+        _routeDiscRreqSent = true;
     }
 
     // Wait for RREP responses
     if (millis() - _stateEnteredMs >= HARVEST_ROUTE_DISC_WAIT_MS) {
         Serial.printf("[%s] Route discovery period complete (%u routes found)\n",
                       TAG, _aodvRouter->routeCount());
-        rreqSent = false;  // Reset for next cycle
+        _routeDiscRreqSent = false;  // Reset for next cycle
         _enterState(HARVEST_DISCONNECT);
     }
 }
@@ -228,13 +231,14 @@ void HarvestLoop::_doWakeNode() {
         loraSendSafe(wakePkt, sizeof(wakePkt));
         loraStartReceiveSafe();
 
-        Serial.printf("[%s] WAKE_PING sent for %s — waiting %ums for node to boot\n",
-                      TAG, _currentNode.ssid, (unsigned)2500);
+        Serial.printf("[%s] WAKE_PING broadcast sent — waiting %ums for sleeping nodes to reboot\n",
+                      TAG, (unsigned)12000);
     }
 
-    // Wait for the leaf to reinit its radio and start WiFi AP.
-    // 500ms radio settle + ~2000ms WiFi AP startup = 2500ms total.
-    vTaskDelay(pdMS_TO_TICKS(2500));
+    // Wait for the leaf to complete full deep-sleep reboot:
+    // SD mount (8-21s) + LoRa init + WiFi AP startup.
+    // Combined with HARVEST_WIFI_TIMEOUT_MS (25s) = 37s total window.
+    vTaskDelay(pdMS_TO_TICKS(12000));
 
     _enterState(HARVEST_CONNECT);
 }
@@ -259,7 +263,10 @@ void HarvestLoop::_doConnect() {
 
         if (WiFi.status() != WL_CONNECTED) {
             Serial.printf("[ERROR] WiFi connect to relay %s FAILED\n", _relaySSID);
-            _registry.markHarvested(_currentNode.nodeId);
+            if (registryLock()) {
+                _registry.markHarvested(_currentNode.nodeId);
+                registryUnlock();
+            }
             _stats.nodesFailed++;
             _relayHarvesting = false;
             _enterState(HARVEST_DISCONNECT);
@@ -326,7 +333,10 @@ void HarvestLoop::_doConnect() {
 
     if (WiFi.status() != WL_CONNECTED) {
         Serial.printf("[ERROR] WiFi connect to %s FAILED (timeout)\n", _currentNode.ssid);
-        _registry.markHarvested(_currentNode.nodeId);
+        if (registryLock()) {
+            _registry.markHarvested(_currentNode.nodeId);
+            registryUnlock();
+        }
         _stats.nodesFailed++;
         _enterState(HARVEST_DISCONNECT);
         return;
@@ -346,7 +356,10 @@ void HarvestLoop::_doConnect() {
 void HarvestLoop::_doRelayCmd() {
     if (!_loraRadio || !_aodvRouter) {
         Serial.printf("[%s] No LoRa/AODV — cannot relay, skipping node\n", TAG);
-        _registry.markHarvested(_currentNode.nodeId);
+        if (registryLock()) {
+            _registry.markHarvested(_currentNode.nodeId);
+            registryUnlock();
+        }
         _stats.nodesFailed++;
         _enterState(HARVEST_DISCONNECT);
         return;
@@ -357,7 +370,10 @@ void HarvestLoop::_doRelayCmd() {
     RouteEntry route;
     if (!_aodvRouter->getRoute(_currentNode.nodeId, route)) {
         Serial.printf("[%s] No AODV route to %s — skipping\n", TAG, _currentNode.ssid);
-        _registry.markHarvested(_currentNode.nodeId);
+        if (registryLock()) {
+            _registry.markHarvested(_currentNode.nodeId);
+            registryUnlock();
+        }
         _stats.nodesFailed++;
         _enterState(HARVEST_DISCONNECT);
         return;
@@ -376,7 +392,10 @@ void HarvestLoop::_doRelayCmd() {
 
     if (!relayFound) {
         Serial.printf("[%s] Relay node not in registry — skipping\n", TAG);
-        _registry.markHarvested(_currentNode.nodeId);
+        if (registryLock()) {
+            _registry.markHarvested(_currentNode.nodeId);
+            registryUnlock();
+        }
         _stats.nodesFailed++;
         _enterState(HARVEST_DISCONNECT);
         return;
@@ -419,18 +438,30 @@ void HarvestLoop::_doRelayCmd() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 void HarvestLoop::_doRelayWait() {
-    // Check if ACK received (set by onHarvestAck callback)
+    // Check if ACK received (set by onHarvestAck callback on another core)
+    HarvestAckPacket localAck;
+    bool ackReceived = false;
+    portENTER_CRITICAL(&_relayAckMux);
     if (_relayAckReceived) {
-        if (_lastRelayAck.status == HARVEST_STATUS_OK && _lastRelayAck.imageCount > 0) {
+        ackReceived = true;
+        localAck = _lastRelayAck;
+    }
+    portEXIT_CRITICAL(&_relayAckMux);
+
+    if (ackReceived) {
+        if (localAck.status == HARVEST_STATUS_OK && localAck.imageCount > 0) {
             Serial.printf("[%s] Relay harvested %u images — connecting to relay AP %s\n",
-                          TAG, _lastRelayAck.imageCount, _relaySSID);
+                          TAG, localAck.imageCount, _relaySSID);
             // Now connect to the relay to download the cached images
             _enterState(HARVEST_DISCONNECT);
             return;
         } else {
             Serial.printf("[%s] Relay harvest failed (status=%s) — skipping node\n",
-                          TAG, HarvestAckPacket::statusToString(_lastRelayAck.status));
-            _registry.markHarvested(_currentNode.nodeId);
+                          TAG, HarvestAckPacket::statusToString(localAck.status));
+            if (registryLock()) {
+                _registry.markHarvested(_currentNode.nodeId);
+                registryUnlock();
+            }
             _stats.nodesFailed++;
             _relayHarvesting = false;
             _enterState(HARVEST_DISCONNECT);
@@ -441,7 +472,10 @@ void HarvestLoop::_doRelayWait() {
     // Timeout check
     if (millis() - _stateEnteredMs >= HARVEST_RELAY_TIMEOUT_MS) {
         Serial.printf("[%s] Relay ACK TIMEOUT for %s\n", TAG, _currentNode.ssid);
-        _registry.markHarvested(_currentNode.nodeId);
+        if (registryLock()) {
+            _registry.markHarvested(_currentNode.nodeId);
+            registryUnlock();
+        }
         _stats.nodesFailed++;
         _relayHarvesting = false;
         _enterState(HARVEST_DISCONNECT);
@@ -455,7 +489,13 @@ void HarvestLoop::_doRelayWait() {
 void HarvestLoop::_doCoapInit() {
     if (!_coapClient.begin()) {
         Serial.printf("[ERROR] CoAP client init failed for %s\n", _currentNode.ssid);
-        _registry.markHarvested(_currentNode.nodeId);
+        if (_relayHarvesting) {
+            _relayHarvesting = false;
+        }
+        if (registryLock()) {
+            _registry.markHarvested(_currentNode.nodeId);
+            registryUnlock();
+        }
         _stats.nodesFailed++;
         _enterState(HARVEST_DISCONNECT);
         return;
@@ -477,8 +517,8 @@ void HarvestLoop::_doDownload() {
     Serial.printf("=== GET /info from %s ===\n",
                   _relayHarvesting ? _relaySSID : _currentNode.ssid);
 
-    uint8_t infoBuf[512];
-    size_t  infoLen = sizeof(infoBuf);
+    uint8_t infoBuf[513];
+    size_t  infoLen = sizeof(infoBuf) - 1;
     CoapClientError err = _coapClient.get(leafIP, leafPort, "info", infoBuf, infoLen);
 
     uint8_t imageCount = 0;
@@ -589,7 +629,10 @@ void HarvestLoop::_doDownload() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 void HarvestLoop::_doNext() {
-    _registry.markHarvested(_currentNode.nodeId);
+    if (registryLock()) {
+        _registry.markHarvested(_currentNode.nodeId);
+        registryUnlock();
+    }
     _relayHarvesting = false;
     _enterState(HARVEST_DISCONNECT);
 }
@@ -598,11 +641,94 @@ void HarvestLoop::_doNext() {
 // State: DONE
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+void HarvestLoop::_selfCopyImages() {
+    File imgDir = SD.open("/images");
+    if (!imgDir || !imgDir.isDirectory()) {
+        Serial.printf("[%s] Self-copy: /images/ not found — skipping\n", TAG);
+        if (imgDir) imgDir.close();
+        return;
+    }
+
+    if (!SD.exists(HARVEST_SAVE_DIR)) {
+        SD.mkdir(HARVEST_SAVE_DIR);
+    }
+
+    char nodePrefix[8] = "SELF";
+
+    uint16_t copied = 0;
+    File entry;
+    while ((entry = imgDir.openNextFile())) {
+        if (entry.isDirectory()) { entry.close(); continue; }
+
+        const char* name = entry.name();
+        size_t nameLen = strlen(name);
+        if (nameLen < 4) { entry.close(); continue; }
+        const char* ext = name + nameLen - 4;
+        bool isJpg = (strcasecmp(ext, ".jpg") == 0);
+        if (!isJpg && nameLen >= 5) {
+            isJpg = (strcasecmp(name + nameLen - 5, ".jpeg") == 0);
+        }
+        if (!isJpg) { entry.close(); continue; }
+
+        // Build output path
+        char outPath[96];
+        uint32_t uptimeSec = millis() / 1000;
+        snprintf(outPath, sizeof(outPath),
+                 "%s/node_%s_boot%03lu_%06lus_img_%03u.jpg",
+                 HARVEST_SAVE_DIR, nodePrefix,
+                 (unsigned long)rtcBootCount,
+                 (unsigned long)uptimeSec, copied);
+
+        File dst = SD.open(outPath, FILE_WRITE);
+        if (!dst) {
+            Serial.printf("[%s] Self-copy: cannot create %s\n", TAG, outPath);
+            entry.close();
+            continue;
+        }
+
+        // Copy in chunks
+        uint8_t buf[1024];
+        size_t totalBytes = 0;
+        bool writeErr = false;
+        while (entry.available()) {
+            size_t n = entry.read(buf, sizeof(buf));
+            if (n == 0) break;
+            size_t written = dst.write(buf, n);
+            if (written != n) {
+                Serial.printf("[%s] Self-copy: write error on %s (%u of %u)\n",
+                              TAG, outPath, (unsigned)written, (unsigned)n);
+                writeErr = true;
+                break;
+            }
+            totalBytes += written;
+        }
+        dst.close();
+        entry.close();
+
+        if (writeErr) {
+            SD.remove(outPath);
+            continue;
+        }
+
+        Serial.printf("[%s] Self-copy: %s -> %s (%lu bytes)\n",
+                      TAG, name, outPath, (unsigned long)totalBytes);
+        _stats.totalImages++;
+        _stats.totalBytes += totalBytes;
+        copied++;
+    }
+    imgDir.close();
+
+    Serial.printf("[%s] Self-copy complete: %u image(s) copied\n", TAG, copied);
+}
+
 void HarvestLoop::_doDone() {
     _stats.totalTimeMs = millis() - _cycleStartMs;
 
     _coapClient.stop();
     WiFi.disconnect(true);
+
+    // ── Self-copy: gateway's own /images/ → /received/ ──────
+    _selfCopyImages();
 
     // Restart LoRa RX for beacon listening after harvest
     if (_loraRadio) {

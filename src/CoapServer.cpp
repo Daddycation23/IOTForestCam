@@ -236,6 +236,9 @@ void CoapServer::_handleImageGet(CoapMessage& req, uint8_t imageIndex,
     // Read the requested block from SD card (uses member _blockBuf to
     // avoid ~520 bytes of stack that could cause overflow with WiFi active)
     if (!_storage.readBlock(blockNum, _blockBuf)) {
+        log_e("%s: readBlock(%lu) failed for image %u — resetting file handle",
+              TAG, blockNum, imageIndex);
+        _openImageIndex = -1;
         _sendError(req, COAP_INTERNAL_ERROR, "Block read failed",
                    remoteIP, remotePort);
         return;
@@ -295,10 +298,11 @@ void CoapServer::_handleInfoGet(CoapMessage& req,
     for (uint8_t i = 0; i < _storage.imageCount() && pos < (int)sizeof(json) - 80; i++) {
         ImageInfo info;
         if (_storage.getImageInfo(i, info)) {
-            if (i > 0) json[pos++] = ',';
+            if (i > 0 && pos < (int)sizeof(json) - 1) json[pos++] = ',';
             pos += snprintf(&json[pos], sizeof(json) - pos,
                             "{\"id\":%u,\"name\":\"%s\",\"size\":%lu,\"blocks\":%lu}",
                             i, info.filename, info.fileSize, info.totalBlocks);
+            if (pos >= (int)sizeof(json) - 4) break;  // Leave room for "]}"
         }
     }
     pos += snprintf(&json[pos], sizeof(json) - pos, "]}");

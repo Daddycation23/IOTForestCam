@@ -92,7 +92,7 @@ pio test -e native -f test_deep_sleep
 **Gateway serial output — wake + harvest:**
 ```
 [Harvest] -> WAKE_NODE
-[Harvest] WAKE_PING sent for ForestCam-AABB — waiting 2500ms for node to boot
+[Harvest] WAKE_PING broadcast sent — waiting 12000ms for sleeping nodes to reboot
 [Harvest] -> CONNECT
 --- Connecting to ForestCam-AABB ---
 ..........
@@ -136,9 +136,10 @@ If you have a multimeter:
 |---------|-------------|-----|
 | Leaf never sleeps | CoAP requests keep resetting timer | Check `onActivity()` calls |
 | Leaf doesn't wake | DIO1 not asserted, or GPIO 9 not RTC-capable | Verify `esp_sleep_enable_ext1_wakeup` with GPIO 9 bitmask |
-| Leaf wakes but can't connect | WiFi AP not starting fast enough | Increase wait in `_doWakeNode()` (default 2.5s) |
+| Leaf wakes but can't connect | WiFi AP not starting fast enough | Increase wait in `_doWakeNode()` (default 12s) |
 | RTC state lost | Not saved before sleep | Check `saveState()` is called in sleep path |
 | Fast-path skipped | `rtcStateValid` is false | First boot always uses normal path; fast-path starts from boot #2 |
+| Leaf sleeps during election | Sleep timer fired before election started | `isGatewayMissing()` guard blocks sleep when GW beacon missing >60s. Also `isElectionActive()` blocks sleep during active election. Check `ElectionManager.h` |
 
 ---
 
@@ -160,5 +161,6 @@ If you have a multimeter:
 | `include/AodvPacket.h` | Added `PKT_TYPE_WAKE_PING` and `PKT_TYPE_WAKE_BEACON_REQ` |
 | `include/HarvestLoop.h` | Added `HARVEST_WAKE_NODE` state |
 | `src/HarvestLoop.cpp` | Implemented `_doWakeNode()` with two-step wake |
-| `src/main.cpp` | Fast-path wake in setup(), sleep check in leaf/relay task |
+| `src/main.cpp` | Fast-path wake in setup(), sleep check with election guards in leaf/relay task |
+| `include/ElectionManager.h` | `isGatewayMissing()` + `isElectionActive()` sleep guards |
 | `test/test_deep_sleep/` | NEW — 16 unit tests |

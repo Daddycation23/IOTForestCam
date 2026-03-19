@@ -3,9 +3,10 @@
  * @brief Bully election algorithm for gateway selection and failover
  *
  * All non-gateway nodes (LEAF and RELAY) participate in election.
- * On boot, a startup grace period (ELECTION_STARTUP_GRACE_MS) allows
- * beacon discovery before triggering election. If no gateway is heard
- * after the grace period, the highest-priority node promotes to gateway.
+ * On boot, a startup grace period (ELECTION_STARTUP_GRACE_MS + 0-5s
+ * MAC-based jitter) allows beacon discovery before triggering election.
+ * If no gateway is heard after the grace period, the highest-priority
+ * node promotes to gateway and beacons as NODE_ROLE_GATEWAY.
  *
  * When a manually-assigned gateway recovers, it broadcasts GW_RECLAIM
  * and the promoted node demotes back to LEAF.
@@ -28,8 +29,8 @@
 // ─── Election Constants ──────────────────────────────────────
 static constexpr uint32_t ELECTION_GW_TIMEOUT_MS          = 90000;  // 3 missed beacons
 static constexpr uint32_t ELECTION_STARTUP_GRACE_MS       = 15000;  // Wait before first election
-static constexpr uint32_t ELECTION_BACKOFF_MIN_MS         = 200;
-static constexpr uint32_t ELECTION_BACKOFF_MAX_MS         = 800;
+static constexpr uint32_t ELECTION_BACKOFF_MIN_MS         = 500;
+static constexpr uint32_t ELECTION_BACKOFF_MAX_MS         = 3000;
 static constexpr uint32_t ELECTION_COORDINATOR_TIMEOUT_MS = 5000;
 static constexpr uint32_t ELECTION_OVERALL_TIMEOUT_MS     = 10000;
 static constexpr uint32_t ELECTION_RECLAIM_COOLDOWN_MS    = 30000;
@@ -62,6 +63,18 @@ public:
 
     NodeRole activeRole() const { return _activeRole; }
     bool isPromoted() const { return _state == ELECT_ACTING_GATEWAY; }
+    bool isElectionActive() const {
+        return _state == ELECT_ELECTION_START || _state == ELECT_WAITING ||
+               _state == ELECT_STOOD_DOWN    || _state == ELECT_PROMOTED;
+    }
+    /** True when gateway beacon has been missing long enough that sleep should be blocked.
+     *  Uses 60s (2 missed beacons) — well before the 90s election timeout,
+     *  ensuring the node stays awake for election to trigger and complete. */
+    bool isGatewayMissing() const {
+        if (_originalRole == NODE_ROLE_GATEWAY) return false;
+        if (!_gatewayEverSeen) return true;  // Still in grace period, no GW
+        return (millis() - _lastGatewayBeaconMs) >= 60000;
+    }
     ElectionState state() const { return _state; }
     const char* stateStr() const;
 
@@ -82,6 +95,7 @@ private:
     uint16_t _currentElectionId;
 
     uint32_t _bootMs;
+    uint32_t _graceEndMs;
     uint32_t _lastGatewayBeaconMs;
     bool     _gatewayEverSeen;
 

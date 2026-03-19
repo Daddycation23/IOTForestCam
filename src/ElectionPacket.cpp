@@ -13,15 +13,6 @@ static void writeU16LE(uint8_t* buf, uint16_t val) {
 static uint16_t readU16LE(const uint8_t* buf) {
     return buf[0] | (buf[1] << 8);
 }
-static void writeU32LE(uint8_t* buf, uint32_t val) {
-    buf[0] = val & 0xFF;
-    buf[1] = (val >> 8) & 0xFF;
-    buf[2] = (val >> 16) & 0xFF;
-    buf[3] = (val >> 24) & 0xFF;
-}
-static uint32_t readU32LE(const uint8_t* buf) {
-    return buf[0] | (buf[1] << 8) | (buf[2] << 16) | (buf[3] << 24);
-}
 
 uint8_t ElectionPacket::serialize(uint8_t* buf, uint8_t maxLen) const {
     if (maxLen < ELECTION_PACKET_SIZE) return 0;
@@ -32,11 +23,9 @@ uint8_t ElectionPacket::serialize(uint8_t* buf, uint8_t maxLen) const {
     buf[pos++] = type;             // 0x30-0x33
     memcpy(&buf[pos], senderId, 6);
     pos += 6;
-    writeU32LE(&buf[pos], priority);
-    pos += 4;
     writeU16LE(&buf[pos], electionId);
     pos += 2;
-    return pos;  // 15
+    return pos;  // 11
 }
 
 bool ElectionPacket::parse(const uint8_t* buf, uint8_t len) {
@@ -51,8 +40,6 @@ bool ElectionPacket::parse(const uint8_t* buf, uint8_t len) {
     type = buf[pos++];
     memcpy(senderId, &buf[pos], 6);
     pos += 6;
-    priority = readU32LE(&buf[pos]);
-    pos += 4;
     electionId = readU16LE(&buf[pos]);
     pos += 2;
     return true;

@@ -121,7 +121,7 @@ static char _apSSID[32];
 static bool    _loraReady    = false;
 static bool    _gwLoraReady  = false;   // Gateway LoRa status (set in initGateway)
 static std::atomic<bool> _relayBusy{false};        // Accessed from Core 0 + Core 1
-static uint8_t _relayCmdId   = 0;
+static std::atomic<uint8_t> _relayCmdId{0};
 
 // ─── Deep sleep manager (leaf/relay only) ────────────────────
 DeepSleepManager deepSleepMgr;
@@ -132,7 +132,7 @@ static std::atomic<uint32_t> _relayCachedStartMs{0};       // When we started se
 static constexpr uint32_t RELAY_CACHED_TIMEOUT_MS = 120000;  // Auto-cleanup after 2 min
 
 // ─── Gateway timing ───────────────────────────────────────────
-static constexpr uint32_t HARVEST_LISTEN_PERIOD_MS = 60000;  // Listen 60 s before harvest
+static constexpr uint32_t HARVEST_LISTEN_PERIOD_MS = 180000; // 3 min between harvest cycles
 static constexpr uint32_t ROUTE_DISCOVERY_DELAY_MS = 15000;  // RREQ 15 s after boot
 
 
@@ -268,8 +268,8 @@ static void relayHarvest(const HarvestCmdPacket& cmd) {
             uint16_t  leafPort = COAP_DEFAULT_PORT;
 
             // Get image count from /info endpoint
-            uint8_t infoBuf[512];
-            size_t  infoLen = sizeof(infoBuf);
+            uint8_t infoBuf[513];
+            size_t  infoLen = sizeof(infoBuf) - 1;
             CoapClientError err = relayCoap.get(leafIP, leafPort,
                                                  "info", infoBuf, infoLen);
 
@@ -411,7 +411,6 @@ static void initGateway() {
         ElectionPacket reclaim;
         reclaim.type = PKT_TYPE_GW_RECLAIM;
         memcpy(reclaim.senderId, myMac, 6);
-        reclaim.priority = ElectionPacket::macToPriority(myMac);
         reclaim.electionId = 0;
 
         uint8_t buf[ELECTION_PACKET_SIZE];
@@ -562,6 +561,10 @@ static void initLeafRelay() {
     // ── AODV Router ──────────────────────────────────────────
     if (_loraReady) {
         aodvRouter.begin(mac);
+        harvestLoop.setAodv(&aodvRouter, &loraRadio);
+        harvestLoop.setNodeBlockedCallback([](const uint8_t nodeId[6]) -> bool {
+            return serialCmd.isNodeBlocked(nodeId);
+        });
         electionMgr.begin(mac, g_role);
     }
 
@@ -619,26 +622,18 @@ static void taskLoRaGateway(void* param) {
             continue;
         }
 
-        // ── Periodic LoRa diagnostic + RX recovery (every 15 s) ──
-        if (millis() - lastDiag >= 15000) {
+        // ── Periodic LoRa RX recovery (every 5 s) ──────────────
+        if (millis() - lastDiag >= 5000) {
             lastDiag = millis();
             if (xSemaphoreTake(xLoRaMutex, MUTEX_TIMEOUT) == pdTRUE) {
                 uint8_t st = loraRadio.getStatus();
                 uint8_t mode = (st >> 4) & 0x07;
-                uint16_t irq = loraRadio.getIrqFlags();
-                Serial.printf("[LoRa DIAG] status=0x%02X mode=%u(%s) IRQ=0x%04X DIO1=%d\n",
-                              st, mode,
-                              mode == 2 ? "STBY_RC" : mode == 3 ? "STBY_XOSC" :
-                              mode == 4 ? "FS" : mode == 5 ? "RX" :
-                              mode == 6 ? "TX" : "??",
-                              irq, digitalRead(LORA_DIO1));
 
                 if (mode != 5 && mode != 6) {
-                    Serial.println("[LoRa] Radio not in RX — attempting recovery...");
-                    if (loraRadio.startReceive()) {
-                        Serial.println("[LoRa] RX recovery OK");
-                    } else {
-                        Serial.println("[LoRa] RX recovery FAILED");
+                    if (!loraRadio.startReceive()) {
+                        uint16_t irq = loraRadio.getIrqFlags();
+                        Serial.printf("[LoRa] RX recovery FAILED status=0x%02X mode=%u IRQ=0x%04X\n",
+                                      st, mode, irq);
                     }
                 }
                 xSemaphoreGive(xLoRaMutex);
@@ -823,6 +818,9 @@ static void taskLoRaGateway(void* param) {
 // FreeRTOS Task: LoRa (Core 0) — Leaf/Relay mode
 // =============================================================
 
+// Forward declaration — taskHarvestGateway is created lazily on promotion
+static void taskHarvestGateway(void* param);
+
 /**
  * Leaf/Relay LoRa task: beacon TX, LoRa RX dispatch,
  * AODV routing ticks, election ticks.
@@ -853,26 +851,18 @@ static void taskLoRaLeafRelay(void* param) {
             continue;
         }
 
-        // ── Periodic LoRa diagnostic + RX recovery (every 15 s) ──
-        if (millis() - lastDiag >= 15000) {
+        // ── Periodic LoRa RX recovery (every 5 s) ──────────────
+        if (millis() - lastDiag >= 5000) {
             lastDiag = millis();
             if (xSemaphoreTake(xLoRaMutex, MUTEX_TIMEOUT) == pdTRUE) {
                 uint8_t st = loraRadio.getStatus();
                 uint8_t mode = (st >> 4) & 0x07;
-                uint16_t irq = loraRadio.getIrqFlags();
-                Serial.printf("[LoRa DIAG] status=0x%02X mode=%u(%s) IRQ=0x%04X DIO1=%d\n",
-                              st, mode,
-                              mode == 2 ? "STBY_RC" : mode == 3 ? "STBY_XOSC" :
-                              mode == 4 ? "FS" : mode == 5 ? "RX" :
-                              mode == 6 ? "TX" : "??",
-                              irq, digitalRead(LORA_DIO1));
 
                 if (mode != 5 && mode != 6) {
-                    Serial.println("[LoRa] Radio not in RX — attempting recovery...");
-                    if (loraRadio.startReceive()) {
-                        Serial.println("[LoRa] RX recovery OK");
-                    } else {
-                        Serial.println("[LoRa] RX recovery FAILED");
+                    if (!loraRadio.startReceive()) {
+                        uint16_t irq = loraRadio.getIrqFlags();
+                        Serial.printf("[LoRa] RX recovery FAILED status=0x%02X mode=%u IRQ=0x%04X\n",
+                                      st, mode, irq);
                     }
                 }
                 xSemaphoreGive(xLoRaMutex);
@@ -888,8 +878,13 @@ static void taskLoRaLeafRelay(void* param) {
             beacon.packetType = BEACON_TYPE_BEACON;
             beacon.ttl = 2;
             WiFi.macAddress(beacon.nodeId);
-            beacon.nodeRole   = (g_role == NODE_ROLE_RELAY || aodvRouter.isRelaying())
-                                    ? NODE_ROLE_RELAY : NODE_ROLE_LEAF;
+            if (electionMgr.isPromoted()) {
+                beacon.nodeRole = NODE_ROLE_GATEWAY;
+            } else if (g_role == NODE_ROLE_RELAY || aodvRouter.isRelaying()) {
+                beacon.nodeRole = NODE_ROLE_RELAY;
+            } else {
+                beacon.nodeRole = NODE_ROLE_LEAF;
+            }
             beacon.ssidLen    = strlen(_apSSID);
             if (beacon.ssidLen > BEACON_MAX_SSID) beacon.ssidLen = BEACON_MAX_SSID;
             memcpy(beacon.ssid, _apSSID, beacon.ssidLen);
@@ -919,15 +914,16 @@ static void taskLoRaLeafRelay(void* param) {
             switch (pktType) {
                 case BEACON_TYPE_BEACON:
                 case BEACON_TYPE_BEACON_RELAY: {
-                    if (g_role == NODE_ROLE_RELAY || electionMgr.isPromoted()) {
-                        BeaconPacket received;
-                        if (received.parse(rx.data, rx.length)) {
+                    BeaconPacket received;
+                    if (received.parse(rx.data, rx.length)) {
+                        // All nodes must see beacons for gateway detection
+                        electionMgr.onBeacon(received);
+
+                        // Only relay/promoted nodes do registry update and beacon forwarding
+                        if (g_role == NODE_ROLE_RELAY || electionMgr.isPromoted()) {
                             uint8_t myMac[6];
                             WiFi.macAddress(myMac);
 
-                            if (received.nodeRole == NODE_ROLE_GATEWAY) {
-                                electionMgr.onBeacon(received);
-                            }
                             if (electionMgr.isPromoted()) {
                                 if (registryLock()) {
                                     registry.update(received, rx.rssi);
@@ -1032,10 +1028,77 @@ static void taskLoRaLeafRelay(void* param) {
         // ── Election state machine ──────────────────────────
         electionMgr.tick();
 
+        // ── Harvest trigger (promoted gateway only) ─────────
+        static bool wasPromoted = false;
+        static uint32_t promoteListenStartMs = 0;
+        static HarvestState prevPromoteState = HARVEST_IDLE;
+        static bool promoteHarvestTriggered = false;
+        bool nowPromoted = electionMgr.isPromoted();
+
+        if (nowPromoted && !wasPromoted) {
+            // Fresh promotion — reset all harvest timing
+            promoteListenStartMs = millis();
+            prevPromoteState = HARVEST_IDLE;
+            promoteHarvestTriggered = false;
+            SD.mkdir("/received");
+
+            // Create harvest task on-demand (first promotion only)
+            if (hTaskHarvest == nullptr) {
+                xTaskCreatePinnedToCore(taskHarvestGateway, "Harvest_GW",
+                    STACK_HARVEST, nullptr, PRIORITY_HARVEST,
+                    &hTaskHarvest, CORE_NETWORK);
+                Serial.println("[Promoted GW] Harvest task created");
+            }
+            Serial.println("[Promoted GW] Harvest capability enabled, listening...");
+        }
+        wasPromoted = nowPromoted;
+
+        if (nowPromoted) {
+            uint8_t activeNodes = 0;
+            if (registryLock()) {
+                activeNodes = registry.activeCount();
+                registryUnlock();
+            }
+
+            HarvestState curState = harvestLoop.state();
+
+            if (curState == HARVEST_IDLE &&
+                !promoteHarvestTriggered &&
+                activeNodes > 0 &&
+                millis() - promoteListenStartMs >= HARVEST_LISTEN_PERIOD_MS)
+            {
+                if (!aodvRouter.isDiscoveryPending()) {
+                    aodvRouter.discoverAll();
+                }
+                Serial.printf("\n[Harvest] Starting cycle — %u node(s)\n", activeNodes);
+                uint8_t cmd = 1;
+                xQueueSend(xHarvestCmdQueue, &cmd, 0);
+                promoteHarvestTriggered = true;
+            }
+
+            // Reset listen timer after harvest completes
+            if (curState == HARVEST_IDLE && prevPromoteState == HARVEST_DONE) {
+                promoteListenStartMs = millis();
+                promoteHarvestTriggered = false;
+            }
+            prevPromoteState = curState;
+        }
+
         // ── Deep sleep check (leaf/relay only) ──────────────
-        if (g_role != NODE_ROLE_GATEWAY && !electionMgr.isPromoted()) {
+        // Never sleep while promoted, during election, or when gateway is missing
+        // (node must stay awake to run the election and potentially promote)
+        if (g_role != NODE_ROLE_GATEWAY && !electionMgr.isPromoted()
+            && !electionMgr.isElectionActive() && !electionMgr.isGatewayMissing()) {
             deepSleepMgr.setCoapBusy(_relayCachedServing);
             deepSleepMgr.setHarvestInProgress(_relayBusy);
+
+            // Reset sleep timer if CoAP is actively serving blocks
+            static uint32_t lastBlockCount = 0;
+            uint32_t curBlockCount = coapServer.blocksSent();
+            if (curBlockCount != lastBlockCount) {
+                lastBlockCount = curBlockCount;
+                deepSleepMgr.onActivity();
+            }
 
             if (deepSleepMgr.shouldSleep(millis())) {
                 Serial.println("\n[DeepSleep] Active timeout expired — entering deep sleep");
@@ -1048,6 +1111,9 @@ static void taskLoRaLeafRelay(void* param) {
                 coapServer.stop();
                 WiFi.disconnect(true);
                 WiFi.mode(WIFI_OFF);
+
+                // Turn off OLED to save power during sleep
+                display.ssd1306_command(SSD1306_DISPLAYOFF);
 
                 // Prepare radio for DIO1 wake
                 if (_loraReady) {
@@ -1237,9 +1303,10 @@ normal_boot:
     } else {
         xTaskCreatePinnedToCore(taskLoRaLeafRelay, "LoRa_LR",    STACK_LORA,        nullptr, PRIORITY_LORA,        &hTaskLoRa,       CORE_LORA);
         xTaskCreatePinnedToCore(taskCoapServerLoop, "CoAP_Srv",  STACK_COAP_SERVER, nullptr, PRIORITY_COAP_SERVER, &hTaskCoapServer, CORE_NETWORK);
+        // taskHarvestGateway created lazily on promotion (saves 32KB heap)
 
         if (g_role == NODE_ROLE_RELAY) {
-            xTaskCreatePinnedToCore(taskRelayHarvest, "Relay_H",  STACK_HARVEST,    nullptr, PRIORITY_HARVEST,     &hTaskHarvest,    CORE_NETWORK);
+            xTaskCreatePinnedToCore(taskRelayHarvest, "Relay_H",  STACK_HARVEST,    nullptr, PRIORITY_HARVEST,     &hTaskRelayHarvest,    CORE_NETWORK);
         }
     }
 
@@ -1262,7 +1329,11 @@ void loop() {
     }
     lastDisplayMs = millis();
 
+    // Track display mode so we can do a full clear on gateway→leaf transition
+    static bool lastDisplayWasGateway = (g_role == NODE_ROLE_GATEWAY);
+
     if (_activeRole == NODE_ROLE_GATEWAY) {
+        lastDisplayWasGateway = true;
         // ── Gateway OLED ─────────────────────────────────────
         uint8_t activeNodes = 0;
         if (registryLock()) {
@@ -1301,6 +1372,23 @@ void loop() {
 
     } else {
         // ── Leaf/Relay OLED ──────────────────────────────────
+        // Full clear on gateway→leaf/relay transition (old header persists otherwise)
+        if (lastDisplayWasGateway) {
+            lastDisplayWasGateway = false;
+            display.clearDisplay();
+        }
+
+        // Always redraw static header fields (rows 0-40)
+        display.fillRect(0, 0, 128, 48, SSD1306_BLACK);
+        display.setCursor(0, 0);
+        display.println(_activeRole == NODE_ROLE_RELAY ? "Relay (AODV)" : "Leaf (AODV)");
+        display.printf("AP: %s\n", _apSSID);
+        display.printf("IP: %s\n", WiFi.softAPIP().toString().c_str());
+        display.printf("CoAP: %s\n", coapServer.requestCount() > 0 ? ":5683" : "OFF");
+        display.printf("Imgs: %d  LoRa:%s\n",
+                       storage.imageCount(), _loraReady ? "OK" : "NO");
+        display.println("────────────────────");
+
         if (_relayCachedServing) {
             display.fillRect(0, 48, 128, 16, SSD1306_BLACK);
             display.setCursor(0, 48);

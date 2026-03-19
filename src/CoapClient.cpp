@@ -389,11 +389,49 @@ CoapClientError CoapClient::downloadImagePipelined(IPAddress serverIP, uint16_t 
     // ── Main receive loop ────────────────────────────────────
     uint32_t lastActivityMs = millis();
     uint32_t overallTimeout = 30000;  // 30s overall timeout per image
+    bool retried = false;
 
     while (!lastBlockSeen || nextToReceive < nextToSend) {
-        // Check for overall timeout
+        // Check for overall timeout — retry once before giving up
         if (millis() - lastActivityMs > overallTimeout) {
-            log_e("%s: Pipelined download overall timeout", TAG);
+            if (!retried) {
+                log_w("%s: Pipelined download timeout — retrying image from block 0", TAG);
+                retried = true;
+
+                // Reset pipeline state
+                for (uint8_t i = 0; i < COAP_CLIENT_WINDOW_SIZE; i++) {
+                    pending[i].active = false;
+                    reorderBuf[i].valid = false;
+                }
+                outstanding = 0;
+                nextToSend = 0;
+                nextToReceive = 0;
+                lastBlockSeen = false;
+                totalBlocks = 0;
+                sum1 = 0;
+                sum2 = 0;
+                stats.reset();
+
+                // Delete partial file and reopen
+                if (writeToSD) {
+                    outFile.close();
+                    if (outputPath && SD.exists(outputPath)) SD.remove(outputPath);
+                    outFile = SD.open(outputPath, FILE_WRITE);
+                    if (!outFile) {
+                        log_e("%s: Failed to reopen %s for retry", TAG, outputPath);
+                        return COAP_CLIENT_SD_ERROR;
+                    }
+                }
+
+                // Re-send initial burst
+                for (uint8_t i = 0; i < COAP_CLIENT_WINDOW_SIZE; i++) {
+                    sendBlockRequest(nextToSend++);
+                }
+                lastActivityMs = millis();
+                continue;
+            }
+
+            log_e("%s: Pipelined download overall timeout (after retry)", TAG);
             if (writeToSD) outFile.close();
             return COAP_CLIENT_TIMEOUT;
         }
@@ -428,9 +466,17 @@ CoapClientError CoapClient::downloadImagePipelined(IPAddress serverIP, uint16_t 
                         pending[slot].active = false;
                         outstanding--;
 
+                        // Detect server error responses
+                        if (response.code != COAP_CONTENT) {
+                            log_e("%s: Server error on block %lu (code=%u.%02u)",
+                                  TAG, blockNum, response.code >> 5, response.code & 0x1F);
+                            if (writeToSD) outFile.close();
+                            return COAP_CLIENT_SERVER_ERROR;
+                        }
+
                         // Extract Block2 info
                         Block2Info block2;
-                        if (response.getBlock2(block2) && response.code == COAP_CONTENT) {
+                        if (response.getBlock2(block2)) {
                             // Get total size from first block
                             if (blockNum == 0) {
                                 const CoapOption* size2Opt = response.findOption(COAP_OPT_SIZE2);

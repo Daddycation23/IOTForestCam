@@ -17,7 +17,7 @@ Power-on
 |                                        |
 | YES: Legacy manual menu               | NO: Auto-negotiate
 |   (5s timeout, BOOT cycles roles)     |   All nodes start as LEAF
-|                                        |   Election runs after 15s
+|                                        |   Election runs after 15-20s
 v                                        v
 Selected role persisted to NVS          LEAF → (election) → GATEWAY winner
 ```
@@ -27,17 +27,22 @@ Selected role persisted to NVS          LEAF → (election) → GATEWAY winner
 ```
 All nodes: LEAF (boot)
   |
-  |── 15s grace period (listen for beacons) ──|
-  |                                           |
-  |  Gateway beacon heard?                    |
-  |    YES → stay LEAF, no election           |
-  |    NO  → Bully election starts            |
-  |                                           |
-  |── ELECTION packets exchanged ─────────────|
-  |── Highest MAC priority wins ──────────────|
-  |── Winner → COORDINATOR → GATEWAY ────────|
-  |── Losers → stay LEAF ─────────────────────|
+  |── 15-20s grace period (with MAC jitter) ──|
+  |                                            |
+  |  Gateway beacon heard?                     |
+  |    YES → stay LEAF, no election            |
+  |    NO  → Bully election starts             |
+  |                                            |
+  |── ELECTION packets exchanged ──────────────|
+  |── Highest MAC priority wins ───────────────|
+  |── Winner → COORDINATOR → GATEWAY ─────────|
+  |── Winner beacons as GATEWAY ───────────────|
+  |── Losers hear GATEWAY beacon → stay LEAF ──|
 ```
+
+Note: The grace period includes 0-5 seconds of MAC-based jitter
+(`(MAC[4]*256 + MAC[5]) % 5000`) to stagger elections when multiple
+nodes boot simultaneously.
 
 ### Relay Detection
 
@@ -79,18 +84,54 @@ deep-sleep wake cycles.
 
 ## Testing
 
-### Unit Tests (23 tests)
+### Unit Tests (91 tests across 8 suites)
 
 ```bash
-pio test -e native -f test_auto_role
+pio test -e native
 ```
 
-Test categories:
+Test suites:
+- **test_auto_role** (23): boot flow, election, relay detection, filename format, serial commands
+- **test_harvest_trigger** (8): promoted gateway harvest timing, demotion reset, guard flags
+- **test_node_registry** (3): RSSI-based eviction, expiry
+- **test_coap_block** (15): Block2 encode/decode, pipeline, Fletcher-16
+- **test_deep_sleep** (16): sleep timing, wake protocol, RTC state
+- **test_election_packet** (10): serialization round-trip (11-byte format, priority computed from senderId)
+- **test_election_state** (7): MAC priority, backoff bounds
+- **test_native** (9): LoRa RX mode detection
+
+Auto-role specific tests:
 - **Boot flow** (3): default role, enum values, auto-negotiate returns LEAF
 - **Election** (6): leaf participation, priority ordering, grace period, beacon prevention, demotion to LEAF
 - **Relay detection** (4): initial state, RREP sets relaying, multi-route tracking, expiry clears relaying
 - **Filename format** (5): complete format, boot count, uptime, node ID, image index
 - **Serial commands** (5): hex parsing, lowercase, invalid rejection, block/unblock filtering
+
+### Promoted Gateway Harvest Lifecycle
+
+When a node wins the election and becomes acting gateway, it gains
+harvest capability automatically:
+
+```
+Election won → PROMOTED
+  |
+  v
+taskHarvestGateway (already running, blocked on queue)
+  |
+  v
+Harvest trigger enabled in taskLoRaLeafRelay:
+  1. SD.mkdir("/received") — ensure save directory exists
+  2. Wait 60s listen period (collect beacons, build registry)
+  3. AODV route discovery (discoverAll)
+  4. Signal xHarvestCmdQueue → taskHarvestGateway starts cycle
+  5. HarvestLoop handles WiFi STA connect, CoAP download, disconnect
+  6. Cycle complete → reset listen timer → repeat
+```
+
+Notes:
+- `taskHarvestGateway` is created at boot for all roles (blocks on queue, zero overhead)
+- CoAP server task continues running but is harmless (no AP during harvest)
+- `HarvestLoop` manages WiFi switching internally (disconnect AP → STA connect → download)
 
 ### Hardware Test (3+ nodes)
 
@@ -125,6 +166,34 @@ Test categories:
    [Harvest] Node ... is BLOCKED — skipping
    ```
 
+7. **Promoted gateway harvest**: After election (~20s), observe the
+   promoted gateway starts harvesting (~80s from boot):
+   ```
+   [Promoted GW] Harvest capability enabled, listening...
+   [Harvest] Starting cycle — 2 node(s)
+   [Harvest Task] Starting harvest cycle on Core 1
+   ```
+   Verify images are saved to `/received/` on the gateway's SD card.
+
+---
+
+## Troubleshooting
+
+**All nodes show "Gateway (RTOS+AODV)":**
+Ensure you are running the latest firmware. Earlier versions had a bug where
+LEAF nodes could not detect gateway beacons, causing all nodes to self-promote.
+Reflash all nodes with the latest build (`pio run -e esp32s3_unified -t upload`).
+
+**Election takes longer than expected:**
+The grace period includes 0-5s of MAC-based jitter. Nodes with higher MAC[4:5]
+values wait longer. Total grace period is 15-20 seconds.
+
+**Two nodes both show Gateway briefly:**
+This can happen if two nodes have different grace jitter values. The lower-
+priority node may promote first (shorter jitter), but when the higher-priority
+node promotes later and sends GATEWAY beacons, the lower-priority node
+detects the higher priority and yields. The highest-priority node always wins.
+
 ---
 
 ## Key Files
@@ -133,8 +202,10 @@ Test categories:
 |------|---------|
 | `include/RoleConfig.h` | Boot flow: `determineRole()`, `checkBootHeld()` |
 | `src/RoleConfig.cpp` | Auto-negotiate vs manual menu logic |
-| `include/ElectionManager.h` | Election constants, `ELECTION_STARTUP_GRACE_MS` |
+| `include/ElectionManager.h` | Election constants, `isGatewayMissing()` sleep guard |
+| `include/ElectionPacket.h` | 11-byte election packet format (priority computed from senderId) |
 | `src/ElectionManager.cpp` | Bully election state machine (all nodes) |
+| `src/ElectionPacket.cpp` | Serialize/parse for 11-byte election packets |
 | `include/AodvRouter.h` | Relay tracking: `isRelaying()`, `relayingForCount()` |
 | `src/AodvRouter.cpp` | RREP forwarding sets relay flag |
 | `include/SerialCmd.h` | Block/unblock serial command parser |
