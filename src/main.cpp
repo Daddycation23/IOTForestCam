@@ -61,6 +61,7 @@
 
 // ── Deep sleep management ───────────────────────────────────
 #include "DeepSleepManager.h"
+#include <driver/gpio.h>     // gpio_hold_dis/gpio_deep_sleep_hold_dis on wake
 
 // ── Serial command parsing ──────────────────────────────────
 #include "SerialCmd.h"
@@ -1248,8 +1249,14 @@ void setup() {
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
 
-    // ── Fast-path wake: skip role menu if woken by LoRa ─────
-    if (DeepSleepManager::wasWokenByLoRa()) {
+    // ── Fast-path wake: skip role menu if woken by timer or LoRa ─
+    if (DeepSleepManager::wasWokenByTimer() || DeepSleepManager::wasWokenByLoRa()) {
+        // Release GPIO holds set before deep sleep so RadioLib can manage pins
+        gpio_hold_dis(GPIO_NUM_21);   // RXEN
+        gpio_hold_dis(GPIO_NUM_10);   // TXEN
+        gpio_hold_dis(GPIO_NUM_7);    // CS
+        gpio_deep_sleep_hold_dis();
+
         char restoredSSID[32];
         NodeRole restoredRole;
         if (deepSleepMgr.restoreState(restoredRole, restoredSSID)) {

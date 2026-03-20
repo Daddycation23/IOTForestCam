@@ -17,8 +17,8 @@
 // ─── Protocol constants ──────────────────────────────────────
 static constexpr uint8_t AODV_MAGIC   = 0xFC;
 static constexpr uint8_t AODV_VERSION = 0x01;
-static constexpr uint32_t ELECTION_BACKOFF_MIN_MS = 200;
-static constexpr uint32_t ELECTION_BACKOFF_MAX_MS = 800;
+static constexpr uint32_t ELECTION_BACKOFF_MIN_MS = 500;
+static constexpr uint32_t ELECTION_BACKOFF_MAX_MS = 3000;
 
 static uint32_t macToPriority(const uint8_t mac[6]) {
     return mac[2] | (mac[3] << 8) | (mac[4] << 16) | (mac[5] << 24);

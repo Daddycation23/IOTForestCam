@@ -132,6 +132,9 @@
 - **Optimization — Election Packet Size 15→11 bytes:** Removed redundant 4-byte `priority` field from wire format — it's always computable from `senderId` via `macToPriority()`. All senders, receivers, and tests updated. Saves 4 bytes per election/suppress/coordinator/reclaim packet.
 - **Bugfix — Deep Sleep During Pending Election:** Leaf node entered deep sleep before election could trigger when gateway disappeared. Root cause: `SLEEP_ACTIVE_TIMEOUT_MS` (120s) could expire before `ELECTION_GW_TIMEOUT_MS` (90s) + stagger + backoff completed, because beacon RX didn't reset the sleep timer. Fix: added `isElectionActive()` and `isGatewayMissing()` guards to the deep sleep check — node stays awake whenever the gateway is missing or an election is in progress. `isGatewayMissing()` uses 60s threshold (2 missed beacons), well before the 90s election timeout, ensuring the sleep guard activates before `shouldSleep()` fires.
 - **Config — Harvest Interval 60s→180s:** Changed `HARVEST_LISTEN_PERIOD_MS` from 60s to 180s (3 min) for demo. With 60s cycles, WAKE_PING fired every ~90-150s which reset the leaf sleep timer (120s) before it could expire — leaves never actually slept. With 180s, leaves sleep at 120s, get woken by WAKE_PING at 180s, harvest, then sleep again.
+- **Bugfix — WAKE_PING Not Waking Sleeping Nodes:** GPIO 21 (RXEN, PA receive enable) dropped LOW when ESP32-S3 entered deep sleep, disabling the SX1280 receive path so DIO1 never fired. Fix: call `gpio_hold_en(GPIO_NUM_21)` + `gpio_deep_sleep_hold_en()` before sleep to hold RXEN HIGH. On wake, release holds with `gpio_hold_dis`/`gpio_deep_sleep_hold_dis`.
+- **Bugfix — COORDINATOR Ignored During Grace Period:** `onElectionPacket()` COORDINATOR handler only processed states `STOOD_DOWN/WAITING/ELECTION_START`, silently ignoring COORDINATOR received during `ELECT_IDLE` (grace period). This caused nodes to think no gateway existed and start unnecessary elections. Fix: added `ELECT_IDLE` to the state check — sets `_gatewayEverSeen` and `_lastGatewayBeaconMs` without state transition when already in IDLE.
+- **Bugfix — DIO1 Deep Sleep Wake Failure:** LoRa DIO1 ext1 wakeup doesn't work on LILYGO T3-S3 V1.2 despite holding RXEN/TXEN/CS GPIOs. The SX1280's receive path loses power or state during ESP32-S3 deep sleep (hardware limitation). Fix: switched to **timer-based wake** (`esp_sleep_enable_timer_wakeup`, 180s) as primary wake source. DIO1 ext1 kept as secondary. Leaves wake on timer, start WiFi AP + CoAP server, gateway connects during the 120s awake window.
 
 ---
 
@@ -151,6 +154,20 @@
 
 ### 17. ESP-Mesh-Lite Wi-Fi Mesh
 - **Status:** Not planned — using simple AP/STA with AODV routing instead
+
+---
+
+## Known Limitations
+
+### LoRa-Reachable but WiFi-Unreachable Nodes
+The SX1280 LoRa (2.4 GHz with PA) has significantly longer range than the ESP32-S3's WiFi (especially at `WIFI_POWER_8_5dBm`). A leaf node may be within LoRa beacon range (registered as 1-hop direct in NodeRegistry) but beyond WiFi range for CoAP image download. The gateway will attempt WiFi connect, timeout after 25s (`HARVEST_WIFI_TIMEOUT_MS`), mark the node as failed, and repeat the failure every harvest cycle.
+
+**Root cause:** AODV routes are based on LoRa reachability, not WiFi range. There is no automatic fallback to relay harvesting when direct WiFi fails but LoRa succeeds.
+
+**Possible mitigations (not implemented):**
+- Auto-relay promotion: after N consecutive WiFi failures, broadcast HARVEST_CMD to other nodes to attempt relay harvest
+- RSSI-based range estimation: if beacon RSSI is weak, preemptively try relay path
+- Increase WiFi TX power from `WIFI_POWER_8_5dBm` to `WIFI_POWER_19_5dBm` (higher power consumption)
 
 ---
 

@@ -130,12 +130,17 @@ void ElectionManager::onElectionPacket(const uint8_t* buf, uint8_t len) {
             if (_state == ELECT_ACTING_GATEWAY && senderPriority > _myPriority) {
                 Serial.printf("[%s] Yielding to higher-priority coordinator\n", TAG);
                 _enterState(ELECT_RECLAIMED);
-            } else if (_state == ELECT_STOOD_DOWN || _state == ELECT_WAITING ||
-                       _state == ELECT_ELECTION_START) {
-                Serial.printf("[%s] Coordinator announced — returning to IDLE\n", TAG);
+            } else if (_state == ELECT_IDLE || _state == ELECT_STOOD_DOWN ||
+                       _state == ELECT_WAITING || _state == ELECT_ELECTION_START) {
+                // Accept coordinator — including during grace period (IDLE)
                 _lastGatewayBeaconMs = millis();
                 _gatewayEverSeen = true;  // Coordinator IS the gateway now
-                _enterState(ELECT_IDLE);
+                if (_state != ELECT_IDLE) {
+                    Serial.printf("[%s] Coordinator announced — returning to IDLE\n", TAG);
+                    _enterState(ELECT_IDLE);
+                } else {
+                    Serial.printf("[%s] Coordinator noted — gateway exists\n", TAG);
+                }
             }
             break;
         }

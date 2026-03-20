@@ -38,6 +38,7 @@ FreeRTOS tasks pinned to the ESP32-S3's dual cores. The critical improvement:
 Flash the **same unified firmware** to all 3 boards:
 
 ```bash
+$env:PATH += ";C:\Users\<USER>\.platformio\penv\Scripts"
 pio run -e esp32s3_unified -t upload --upload-port COMx
 ```
 

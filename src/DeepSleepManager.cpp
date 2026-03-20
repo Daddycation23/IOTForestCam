@@ -7,6 +7,7 @@
  */
 
 #include "DeepSleepManager.h"
+#include <driver/gpio.h>
 
 static const char* TAG = "DeepSleep";
 
@@ -34,8 +35,11 @@ DeepSleepManager::DeepSleepManager()
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 bool DeepSleepManager::wasWokenByLoRa() {
-    esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
-    return (cause == ESP_SLEEP_WAKEUP_EXT1);
+    return esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT1;
+}
+
+bool DeepSleepManager::wasWokenByTimer() {
+    return esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER;
 }
 
 bool DeepSleepManager::isColdBoot() {
@@ -83,17 +87,31 @@ void DeepSleepManager::prepareRadioForSleep(LoRaRadio& radio) {
         radio.startReceive();
         log_i("%s: Radio in continuous RX for DIO1 wakeup", TAG);
     }
+
+    // Hold PA and SPI pins during deep sleep so the SX1280 receive path works:
+    // - RXEN (GPIO 21) HIGH: PA receive path active
+    // - TXEN (GPIO 10) LOW:  PA transmit path off (must be LOW during RX)
+    // - CS   (GPIO 7)  HIGH: SPI chip select inactive (prevent bus glitches)
+    // Without these holds, GPIOs reset on sleep entry and the SX1280 can't
+    // receive WAKE_PING packets — DIO1 never fires.
+    gpio_hold_en(GPIO_NUM_21);   // RXEN
+    gpio_hold_en(GPIO_NUM_10);   // TXEN
+    gpio_hold_en(GPIO_NUM_7);    // CS
+    gpio_deep_sleep_hold_en();
+    log_i("%s: GPIO 21/10/7 held for deep sleep (RXEN=H, TXEN=L, CS=H)", TAG);
 }
 
 void DeepSleepManager::enterSleep() {
-    log_i("%s: Entering deep sleep — DIO1 (GPIO %d) armed for ext1 wakeup, boot #%lu",
-          TAG, LORA_DIO1, rtcBootCount);
+    log_i("%s: Entering deep sleep — timer %lus + DIO1 armed, boot #%lu",
+          TAG, (unsigned long)SLEEP_TIMER_WAKEUP_S, rtcBootCount);
 
     Serial.flush();
     delay(20);
 
-    // Use ext1 wakeup (ext0 is deprecated on ESP32-S3)
-    // Bit mask for GPIO 9 (DIO1): 1ULL << 9
+    // Primary: timer wakeup (reliable on all boards)
+    esp_sleep_enable_timer_wakeup((uint64_t)SLEEP_TIMER_WAKEUP_S * 1000000ULL);
+
+    // Secondary: DIO1 ext1 wakeup (may not work on LILYGO T3-S3 due to PA power)
     esp_sleep_enable_ext1_wakeup(1ULL << LORA_DIO1, ESP_EXT1_WAKEUP_ANY_HIGH);
 
     esp_deep_sleep_start();

@@ -32,11 +32,16 @@ Gateway                              Leaf (sleeping)
   |                                        |  Timeout → deep sleep
 ```
 
-1. Gateway sends `WAKE_PING` (3-byte LoRa packet: `0xFC 0x01 0x40`)
-2. DIO1 goes HIGH → ESP32-S3 wakes via ext1 wakeup
-3. Leaf reinits radio, starts WiFi AP (using RTC-saved SSID)
-4. Gateway waits 2.5s, then proceeds with WiFi connect + CoAP download
-5. After harvest or 2-minute timeout, leaf returns to deep sleep
+1. Leaf enters deep sleep with 180-second timer wakeup armed
+2. Timer fires → ESP32-S3 wakes, fast-path boot from RTC memory
+3. Leaf reinits radio, starts WiFi AP + CoAP server
+4. Leaf stays awake for 120s (SLEEP_ACTIVE_TIMEOUT_MS)
+5. Gateway connects during awake window, downloads images via CoAP
+6. After harvest or timeout, leaf returns to deep sleep
+
+Note: DIO1 ext1 wakeup is also armed but does not work reliably on the
+LILYGO T3-S3 V1.2 (hardware limitation — SX1280 PA loses power during
+deep sleep). Timer wake is the primary reliable wake source.
 
 ---
 
@@ -135,7 +140,7 @@ If you have a multimeter:
 | Problem | Likely Cause | Fix |
 |---------|-------------|-----|
 | Leaf never sleeps | CoAP requests keep resetting timer | Check `onActivity()` calls |
-| Leaf doesn't wake | DIO1 not asserted, or GPIO 9 not RTC-capable | Verify `esp_sleep_enable_ext1_wakeup` with GPIO 9 bitmask |
+| Leaf doesn't wake | GPIO 21 (RXEN) not held HIGH during sleep | Ensure `gpio_hold_en(GPIO_NUM_21)` + `gpio_deep_sleep_hold_en()` are called before sleep. Without RXEN held, the PA receive path is disabled and DIO1 never fires. |
 | Leaf wakes but can't connect | WiFi AP not starting fast enough | Increase wait in `_doWakeNode()` (default 12s) |
 | RTC state lost | Not saved before sleep | Check `saveState()` is called in sleep path |
 | Fast-path skipped | `rtcStateValid` is false | First boot always uses normal path; fast-path starts from boot #2 |

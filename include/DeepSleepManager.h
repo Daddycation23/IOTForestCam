@@ -28,6 +28,7 @@
 
 // ─── Deep Sleep Configuration ────────────────────────────────
 static constexpr uint32_t SLEEP_ACTIVE_TIMEOUT_MS     = 120000;  // Stay awake 2 min after boot/wake
+static constexpr uint32_t SLEEP_TIMER_WAKEUP_S        = 180;     // 3 min timer wake (primary wake source)
 static constexpr uint32_t SLEEP_WAKE_CMD_TIMEOUT_MS   = 3000;    // Wait 3s for command after wake
 static constexpr uint32_t SLEEP_WAKE_SETTLE_DELAY_MS  = 500;     // Sender waits 500ms between ping and cmd
 
@@ -51,6 +52,11 @@ public:
      * Call early in setup() to determine boot path.
      */
     static bool wasWokenByLoRa();
+
+    /**
+     * Check if woken by timer (primary wake source for periodic harvest).
+     */
+    static bool wasWokenByTimer();
 
     /**
      * Check if this is a cold boot (power-on or software reset).

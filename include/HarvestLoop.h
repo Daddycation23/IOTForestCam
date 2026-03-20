@@ -21,6 +21,7 @@
 #ifndef HARVEST_LOOP_H
 #define HARVEST_LOOP_H
 
+#include <atomic>
 #include <Arduino.h>
 #include <WiFi.h>
 #include <SD.h>
@@ -50,7 +51,7 @@ enum HarvestState : uint8_t {
 
 // ─── Configuration ───────────────────────────────────────────
 
-static constexpr uint32_t HARVEST_WIFI_TIMEOUT_MS    = 15000;   // WiFi connect timeout
+static constexpr uint32_t HARVEST_WIFI_TIMEOUT_MS    = 25000;   // WiFi connect timeout (allows for deep-sleep full reboot)
 static constexpr uint32_t HARVEST_RELAY_TIMEOUT_MS   = 120000;  // Wait for relay ACK (2 min)
 static constexpr uint32_t HARVEST_ROUTE_DISC_WAIT_MS = 6000;    // Wait for AODV route replies
 static constexpr const char* HARVEST_WIFI_PASSWORD    = "forestcam123";
@@ -146,10 +147,12 @@ private:
 
     // ── Multi-hop relay state ───────────────────────────────
     bool           _relayHarvesting;    ///< Currently doing relay-assisted harvest?
+    bool           _routeDiscRreqSent; ///< RREQ sent flag for route discovery state
     uint8_t        _relayCmdIdCounter;  ///< Monotonic command ID counter
     uint8_t        _pendingCmdId;       ///< Command ID we're waiting for ACK on
-    bool           _relayAckReceived;   ///< Have we received the ACK?
+    std::atomic<bool> _relayAckReceived; ///< Have we received the ACK?
     HarvestAckPacket _lastRelayAck;     ///< Last received ACK
+    portMUX_TYPE       _relayAckMux = portMUX_INITIALIZER_UNLOCKED;
     char           _relaySSID[21];      ///< SSID of the relay node to connect to
     NodeBlockedCb  _nodeBlockedCb;      ///< Optional callback to check if node is blocked
 
@@ -168,6 +171,7 @@ private:
     void _doRelayCmd();
     void _doRelayWait();
     void _doDone();
+    void _selfCopyImages();
 };
 
 #endif // HARVEST_LOOP_H

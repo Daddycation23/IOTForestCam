@@ -82,7 +82,7 @@ bool StorageReader::begin() {
     if (cardType == CARD_NONE) {
         log_e("%s: No SD card detected", TAG);
         SD.end();
-        SPI.end();
+        sdSPI.end();
         return false;
     }
 
@@ -271,6 +271,7 @@ bool StorageReader::_scanDirectory() {
     File dir = SD.open(_imageDir);
     if (!dir || !dir.isDirectory()) {
         log_e("%s: Cannot open directory %s", TAG, _imageDir);
+        if (dir) dir.close();
         return false;
     }
 

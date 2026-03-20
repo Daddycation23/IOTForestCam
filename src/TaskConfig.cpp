@@ -23,6 +23,7 @@ EventGroupHandle_t xHarvestEvents   = nullptr;
 
 TaskHandle_t hTaskLoRa        = nullptr;
 TaskHandle_t hTaskHarvest     = nullptr;
+TaskHandle_t hTaskRelayHarvest = nullptr;
 TaskHandle_t hTaskCoapServer  = nullptr;
 TaskHandle_t hTaskOLED        = nullptr;
 

@@ -251,6 +251,8 @@ The prototype is deployed in a phased manner. Initial bench-testing occurs in a 
     \item \textbf{Challenge 3: High Packet Loss on UDP.} CoAP runs over UDP, meaning dropped packets are not automatically resent by the transport layer. Mitigation: The CoAP application layer requires explicit Acknowledgements (ACKs) for every 1024-byte block. If the ESP32-S3 does not receive an ACK within a defined timeout window, it retransmits the specific chunk. \changed{Additionally, the pipelined download detects server error responses and includes a per-image retry mechanism: on overall timeout, the pipeline resets and retries the entire image once before reporting failure.}
 
     \item \changed{\textbf{Challenge 4: LoRa Blackout During Harvest.} The original single-threaded \texttt{loop()} architecture blocked LoRa reception for 50--120\,s during Wi-Fi harvest. Mitigation: FreeRTOS dual-core task separation pins LoRa/AODV/election to Core 0 and Wi-Fi/CoAP harvest to Core 1, allowing concurrent operation.}
+
+    \item \changed{\textbf{Challenge 5: LoRa/Wi-Fi Range Mismatch.} The SX1280 LoRa radio (with PA) has significantly longer range than the ESP32-S3's Wi-Fi, particularly at the reduced TX power setting of 8.5\,dBm used for power savings. A leaf node may be within LoRa beacon range (registered as a direct 1-hop node) but beyond Wi-Fi range for CoAP image download. Currently, the gateway retries direct Wi-Fi connection each cycle with no automatic fallback to relay harvesting, because AODV routes are based on LoRa reachability rather than Wi-Fi range. Future mitigation could include automatic relay promotion after repeated Wi-Fi failures or RSSI-based range estimation.}
 \end{enumerate}
 
 \subsection{Testing Process for Reliability and Functionality}

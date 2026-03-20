@@ -35,7 +35,7 @@ static constexpr UBaseType_t PRIORITY_OLED          = 1;
 // ─── Task Stack Sizes (words, not bytes) ─────────────────────
 static constexpr uint32_t STACK_LORA          = 4096;
 static constexpr uint32_t STACK_HARVEST       = 8192;   // Large: WiFi + CoAP buffers
-static constexpr uint32_t STACK_COAP_SERVER   = 4096;
+static constexpr uint32_t STACK_COAP_SERVER   = 6144;   // 24KB: CoapMessage + WiFi IRQ headroom
 static constexpr uint32_t STACK_OLED          = 2048;
 
 // ─── Queue Sizes ─────────────────────────────────────────────
@@ -68,6 +68,7 @@ extern EventGroupHandle_t xHarvestEvents;   // Harvest lifecycle events
 // ─── Task Handles ────────────────────────────────────────────
 extern TaskHandle_t hTaskLoRa;
 extern TaskHandle_t hTaskHarvest;
+extern TaskHandle_t hTaskRelayHarvest;
 extern TaskHandle_t hTaskCoapServer;
 extern TaskHandle_t hTaskOLED;
 

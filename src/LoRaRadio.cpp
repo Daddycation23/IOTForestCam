@@ -140,7 +140,7 @@ bool LoRaRadio::startReceive() {
     attachInterrupt(digitalPinToInterrupt(LORA_DIO1), _dio1ISR, RISING);
 
     if (state == RADIOLIB_ERR_NONE) {
-        log_i("%s: startReceive() OK", TAG);
+        log_d("%s: startReceive() OK", TAG);
         return true;
     }
 
