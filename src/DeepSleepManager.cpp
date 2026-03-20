@@ -88,17 +88,26 @@ void DeepSleepManager::prepareRadioForSleep(LoRaRadio& radio) {
         log_i("%s: Radio in continuous RX for DIO1 wakeup", TAG);
     }
 
-    // Hold PA and SPI pins during deep sleep so the SX1280 receive path works:
-    // - RXEN (GPIO 21) HIGH: PA receive path active
-    // - TXEN (GPIO 10) LOW:  PA transmit path off (must be LOW during RX)
-    // - CS   (GPIO 7)  HIGH: SPI chip select inactive (prevent bus glitches)
-    // Without these holds, GPIOs reset on sleep entry and the SX1280 can't
-    // receive WAKE_PING packets — DIO1 never fires.
+    // Hold PA control + ALL SPI bus pins during deep sleep.
+    // Without holds, GPIOs float on sleep entry which can:
+    //   1. Disable the PA receive path (RXEN goes LOW → no RF to SX1280)
+    //   2. Cause SPI bus glitches that kick SX1280 out of RX mode
+    //
+    // Pin states held:
+    //   RXEN  (GPIO 21) HIGH — PA receive path active
+    //   TXEN  (GPIO 10) LOW  — PA transmit path off
+    //   CS    (GPIO 7)  HIGH — SPI chip select inactive
+    //   SCK   (GPIO 5)  LOW  — SPI clock idle
+    //   MOSI  (GPIO 6)  LOW  — SPI data idle
+    //   MISO  (GPIO 3)  INPUT — held to prevent floating
     gpio_hold_en(GPIO_NUM_21);   // RXEN
     gpio_hold_en(GPIO_NUM_10);   // TXEN
     gpio_hold_en(GPIO_NUM_7);    // CS
+    gpio_hold_en(GPIO_NUM_5);    // SCK
+    gpio_hold_en(GPIO_NUM_6);    // MOSI
+    gpio_hold_en(GPIO_NUM_3);    // MISO
     gpio_deep_sleep_hold_en();
-    log_i("%s: GPIO 21/10/7 held for deep sleep (RXEN=H, TXEN=L, CS=H)", TAG);
+    log_i("%s: GPIO 21/10/7/5/6/3 held for deep sleep (PA RX + SPI stable)", TAG);
 }
 
 void DeepSleepManager::enterSleep() {

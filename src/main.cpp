@@ -1255,6 +1255,9 @@ void setup() {
         gpio_hold_dis(GPIO_NUM_21);   // RXEN
         gpio_hold_dis(GPIO_NUM_10);   // TXEN
         gpio_hold_dis(GPIO_NUM_7);    // CS
+        gpio_hold_dis(GPIO_NUM_5);    // SCK
+        gpio_hold_dis(GPIO_NUM_6);    // MOSI
+        gpio_hold_dis(GPIO_NUM_3);    // MISO
         gpio_deep_sleep_hold_dis();
 
         char restoredSSID[32];
