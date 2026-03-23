@@ -1,16 +1,16 @@
 /**
  * @file DeepSleepManager.h
- * @brief Deep sleep management with LoRa DIO1 wake-up for leaf/relay nodes
+ * @brief Deep sleep management with timer-based wake for leaf/relay nodes
  *
  * Leaf and relay nodes enter deep sleep between harvest cycles to conserve
- * power. The SX1280's DIO1 pin (GPIO 9) fires HIGH on LoRa packet reception,
- * waking the ESP32-S3 via ext1 wakeup.
+ * power. Wake is timer-based only (180s intervals). LoRa DIO1 ext1 wakeup
+ * was removed — SX1280 LoRa wake is unreliable on LILYGO T3-S3 hardware.
  *
- * Two-Step Wake Protocol:
- *   1. Gateway sends WAKE_PING → DIO1 HIGH → ESP32 wakes
- *   2. Gateway waits 500ms, then sends HARVEST_CMD
- *   3. ESP32 reinits radio, waits 3s for command, starts WiFi AP + CoAP
- *   4. After harvest or timeout → returns to deep sleep
+ * Wake Cycle:
+ *   1. ESP32 wakes on timer (180s)
+ *   2. Restores role + gateway SSID from RTC memory
+ *   3. Connects STA to gateway AP, announces via CoAP POST /announce
+ *   4. Gateway downloads images, leaf sleeps again after 120s idle
  *
  * Gateway nodes never sleep.
  *

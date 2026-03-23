@@ -84,6 +84,7 @@ void initGateway() {
     WiFi.macAddress(gwMac);
     static char _gwAPSSID[32];
     snprintf(_gwAPSSID, sizeof(_gwAPSSID), "ForestCam-GW-%02X%02X", gwMac[4], gwMac[5]);
+    strncpy(_apSSID, _gwAPSSID, sizeof(_apSSID));  // Populate global for consistency
 
     WiFi.mode(WIFI_AP);
     WiFi.softAP(_gwAPSSID, AP_PASS);

@@ -171,8 +171,8 @@ void relayHarvest(const HarvestCmdPacket& cmd) {
     uint8_t ackBuf[64];
     uint8_t ackLen = ack.serialize(ackBuf, sizeof(ackBuf));
     if (ackLen > 0) {
-        loraSendSafe(ackBuf, ackLen);
-        loraStartReceiveSafe();
+        // Use TX queue instead of direct SPI access from Core 1
+        loraTxEnqueue(ackBuf, ackLen);
     }
 
     // ── Start serving cached images via gateway's WiFi network ──

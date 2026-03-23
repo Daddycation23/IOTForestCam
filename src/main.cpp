@@ -65,7 +65,7 @@ std::atomic<bool>       _relayBusy{false};
 std::atomic<uint8_t>    _relayCmdId{0};
 std::atomic<bool>       _relayCachedServing{false};
 std::atomic<uint32_t>   _relayCachedStartMs{0};
-volatile uint32_t       _lastNewBeaconMs = 0;
+std::atomic<uint32_t>   _lastNewBeaconMs{0};
 
 // =============================================================
 // Helpers (used by extracted modules via forward declaration)

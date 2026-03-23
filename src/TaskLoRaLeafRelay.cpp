@@ -90,7 +90,7 @@ void taskLoRaLeafRelay(void* param) {
             if (len > 0) {
                 loraSendSafe(buf, len);
                 Serial.printf("[LoRa] Beacon TX (%u bytes) — %s, %u images\n",
-                              len, _apSSID, beacon.imageCount);
+                              len, beacon.ssid, beacon.imageCount);
             }
 
             loraStartReceiveSafe();
@@ -224,6 +224,23 @@ void taskLoRaLeafRelay(void* param) {
             prevPromoteState = HARVEST_IDLE;
             promoteHarvestTriggered = false;
             SD.mkdir("/received");
+
+            // Switch WiFi to gateway AP mode so leaves can connect as STA
+            uint8_t gwMac[6];
+            WiFi.macAddress(gwMac);
+            char gwSSID[32];
+            BeaconPacket::macToSsid(gwMac, NODE_ROLE_GATEWAY, gwSSID, sizeof(gwSSID));
+            WiFi.softAPdisconnect(true);
+            WiFi.mode(WIFI_AP);
+            WiFi.softAP(gwSSID, AP_PASS);
+            delay(100);
+            strncpy(_apSSID, gwSSID, sizeof(_apSSID));  // Update for OLED/logs
+            Serial.printf("[Promoted GW] WiFi AP switched to: %s\n", gwSSID);
+
+            // Start CoAP server for /announce handling from leaves
+            if (coapServer.begin()) {
+                Serial.printf("[Promoted GW] CoAP server started on port %u\n", COAP_DEFAULT_PORT);
+            }
 
             // Create harvest task on-demand (first promotion only)
             if (hTaskHarvest == nullptr) {

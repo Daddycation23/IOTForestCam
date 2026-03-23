@@ -84,7 +84,7 @@ extern std::atomic<bool>       _relayBusy;
 extern std::atomic<uint8_t>    _relayCmdId;
 extern std::atomic<bool>       _relayCachedServing;
 extern std::atomic<uint32_t>   _relayCachedStartMs;
-extern volatile uint32_t       _lastNewBeaconMs;
+extern std::atomic<uint32_t>   _lastNewBeaconMs;
 
 // ─── Timing constants ──────────────────────────────────────
 static constexpr uint32_t BEACON_INTERVAL_MS       = 30000;

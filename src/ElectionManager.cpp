@@ -126,7 +126,10 @@ void ElectionManager::onElectionPacket(const uint8_t* buf, uint8_t len) {
                 Serial.printf("[%s] Suppressing lower-priority candidate\n", TAG);
                 _sendElectionPacket(PKT_TYPE_SUPPRESS, ELECTION_TX_REPEAT, ELECTION_TX_GAP_MS);
 
-                if (_state == ELECT_IDLE || _state == ELECT_STOOD_DOWN) {
+                // Only start our own election if we don't already know of a gateway.
+                // If _gatewayEverSeen is true, a gateway exists — suppress the pretender
+                // but stay IDLE and let the real gateway handle it.
+                if ((_state == ELECT_IDLE || _state == ELECT_STOOD_DOWN) && !_gatewayEverSeen) {
                     _currentElectionId = pkt.electionId;
                     _enterState(ELECT_ELECTION_START);
                 }
@@ -156,9 +159,15 @@ void ElectionManager::onElectionPacket(const uint8_t* buf, uint8_t len) {
             Serial.printf("[%s] COORDINATOR from %s (pri=0x%08lX)\n",
                           TAG, idStr, senderPriority);
 
-            if (_state == ELECT_ACTING_GATEWAY && senderPriority > _myPriority) {
-                Serial.printf("[%s] Yielding to higher-priority coordinator\n", TAG);
-                _enterState(ELECT_RECLAIMED);
+            if (_state == ELECT_ACTING_GATEWAY) {
+                if (senderPriority > _myPriority) {
+                    Serial.printf("[%s] Yielding to higher-priority coordinator\n", TAG);
+                    _enterState(ELECT_RECLAIMED);
+                } else {
+                    // Demote the pretender — they promoted without hearing our beacons
+                    Serial.printf("[%s] Demoting lower-priority coordinator (sending SUPPRESS)\n", TAG);
+                    _sendElectionPacket(PKT_TYPE_SUPPRESS, ELECTION_TX_REPEAT, ELECTION_TX_GAP_MS);
+                }
             } else if (_state == ELECT_IDLE || _state == ELECT_STOOD_DOWN ||
                        _state == ELECT_WAITING || _state == ELECT_ELECTION_START) {
                 // Accept coordinator — including during grace period (IDLE)

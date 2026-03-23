@@ -460,6 +460,5 @@ void CoapServer::_handleAnnouncePost(CoapMessage& req,
         _sendError(req, COAP_INTERNAL_ERROR, "Announce queue full",
                    remoteIP, remotePort);
     }
-
-    _requestCount++;
+    // Note: _requestCount already incremented in loop() for all requests
 }

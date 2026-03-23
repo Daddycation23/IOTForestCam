@@ -86,6 +86,12 @@ void HarvestLoop::abortCycle() {
 
     _relayHarvesting = false;
     _coapClient.stop();
+
+    // Restore LoRa RX (may have been put in standby by _doDisconnect)
+    if (_loraRadio) {
+        loraStartReceiveSafe();
+    }
+
     _enterState(HARVEST_IDLE);
 }
 
@@ -225,23 +231,21 @@ void HarvestLoop::_doRouteDiscovery() {
 void HarvestLoop::_doDisconnect() {
     _coapClient.stop();
 
-    // Put LoRa into standby to reduce power draw before WiFi activates.
-    // This prevents brownout crashes when WiFi + LoRa RX + SD are all active.
-    if (_loraRadio) {
-        if (xSemaphoreTake(xLoRaMutex, MUTEX_TIMEOUT) == pdTRUE) {
-            _loraRadio->standby();
-            xSemaphoreGive(xLoRaMutex);
-        }
+    // Gateway-as-AP: Do NOT tear down the gateway's WiFi AP!
+    // Announced nodes are already connected to our AP as STA clients.
+    // Only disconnect WiFi if we were connected as STA to a relay/leaf AP
+    // (i.e., during relay phase 2 or legacy direct-connect).
+    if (_relayHarvesting) {
+        // We were connected as STA to a relay — disconnect
+        WiFi.disconnect(true);
+        WiFi.mode(WIFI_AP);  // Restore AP mode (gateway keeps its AP)
+        vTaskDelay(pdMS_TO_TICKS(500));
+        log_d("%s: Disconnected from relay, restored AP mode", TAG);
+    } else {
+        // For announced nodes on our AP, just stop CoAP client — no WiFi change
+        log_d("%s: CoAP client stopped (AP stays up for announced nodes)", TAG);
     }
 
-    WiFi.disconnect(true);
-    WiFi.mode(WIFI_STA);
-    vTaskDelay(pdMS_TO_TICKS(500));
-
-    log_d("%s: WiFi disconnected", TAG);
-
-    // Gateway-as-AP: no WAKE_NODE needed. Leaves connect to gateway AP
-    // on timer wake and announce themselves. Go directly to CONNECT.
     _enterState(HARVEST_CONNECT);
 }
 
