@@ -13,16 +13,18 @@ pip install pyserial aiocoap
 
 ---
 
-## dashboard.py — Live Harvest Dashboard
+## dashboard.py — Live Node Dashboard
 
-Real-time terminal dashboard that reads the gateway's serial output and displays:
+Real-time terminal dashboard that reads **any node's** serial output (leaf or gateway) and displays:
 
-- **Node discovery** — all leaf/relay nodes found via LoRa beacons
-- **Harvest progress** — block-by-block download progress bar
-- **Transfer status** — images completed, bytes transferred, checksums
-- **Event log** — timestamped feed of key events
+- **This Node** — role, SSID, boot count, SD/LoRa/CoAP status, WiFi AP IP, uptime, beacon counter
+- **Node discovery** — leaf/relay nodes found via LoRa beacons (gateway only)
+- **Harvest progress** — block-by-block download progress bar (gateway only)
+- **Event log** — timestamped feed of key events (boot, init, elections, sleep/wake, etc.)
 
 No ESP32 code changes needed — it parses the existing serial log output.
+
+> **Tip:** Plug the USB cable into **whichever node you want to monitor**. With a single leaf node, you'll see boot info, SD/LoRa/CoAP status, and beacon activity. With a gateway, you'll see the full harvest process.
 
 ### Usage
 
@@ -40,12 +42,37 @@ python tools/dashboard.py --port COM9                    # Windows
 python tools/dashboard.py --raw
 ```
 
-### What You'll See
+### Leaf Node View
 
 ```
   IOT Forest Cam — Live Dashboard
 
-  Role: ACTING_GW  |  Boot: #3  |  SD: OK  |  LoRa: OK  |  Total harvested: 5
+  This Node
+  Role: LEAF  |  SSID: ForestCam-7B28  |  Boot: #1
+  SD: OK (3 imgs)  |  LoRa: OK  |  CoAP: ON  |  IP: 192.168.4.1
+  Uptime: 2m 15s  |  Beacons TX: 18  |  Last beacon: 14:23:45
+
+  Event Log
+  14:21:30 Boot #1 — Power-on
+  14:21:30 Auto-negotiation mode — starting as LEAF
+  14:21:30 Role: LEAF
+  14:21:30 SD card: 3 image(s)
+  14:21:31 LoRa SX1280 initialized
+  14:21:31 LoRa beacons enabled (AODV)
+  14:21:31 WiFi AP: ForestCam-7B28
+  14:21:31 CoAP server started (port 5683)
+  14:21:31 FreeRTOS tasks started
+```
+
+### Gateway Node View
+
+```
+  IOT Forest Cam — Live Dashboard
+
+  This Node
+  Role: ACTING_GW  |  SSID: ForestCam-A1B2  |  Boot: #3
+  SD: OK (0 imgs)  |  LoRa: OK  |  CoAP: OFF  |  IP: 192.168.4.1
+  Uptime: 5m 42s  |  Beacons TX: 34  |  Last beacon: 14:28:01
 
   Discovered Nodes
   ID                   SSID                 Images   RSSI Status       Last Seen
@@ -54,7 +81,7 @@ python tools/dashboard.py --raw
   DC:54:75:E4:5B:44    ForestCam-5B44            2  -78dBm done         45s ago
 
   Harvest Status
-  Phase: DOWNLOADING  |  Target: DC:54:75:E4:3A:10 (ForestCam-3A10)
+  Phase: DOWNLOADING  |  Target: DC:54:75:E4:3A:10 (ForestCam-3A10)  |  Total harvested: 5
   Image: 2/3  Block: 34/89
   [███████████████░░░░░░░░░░░░░░░] 38%
   Transferred: 45.2 KB  |  Images: 1 OK, 0 failed
@@ -160,6 +187,9 @@ Gateway (ESP32)                         Leaf Node (ESP32)
   ├─ Saves to SD: /received/               │
   │                                         │
   ▼                                         ▼
-dashboard.py ◄── Serial ──── Gateway    viewer.py ◄── WiFi ──── Leaf
-(live monitoring)                        (image download)
+dashboard.py ◄─── USB Serial ───── Any node (Gateway OR Leaf)
+(live monitoring: boot, role, SD, LoRa, beacons, harvest, sleep/wake)
+
+viewer.py ◄────── WiFi ────────── Leaf AP (ForestCam-XXXX)
+(image download via CoAP)
 ```

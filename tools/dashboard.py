@@ -86,12 +86,19 @@ class Dashboard:
         self.lora_ok = False
         self.sd_ok = False
         self.wifi_ssid = ""
+        self.wifi_ip = ""
         self.uptime_s = 0
         self.last_beacon_tx = ""
+        self.beacon_tx_count = 0
         self.election_state = ""
         self.log_lines: list[str] = []
         self.max_log_lines = 15
         self.total_harvested = 0
+        self.sd_images = 0
+        self.coap_ok = False
+        self.boot_time = None
+        self.deep_sleep_timer = ""
+        self.node_ssid = ""
 
     def add_log(self, line: str):
         timestamp = datetime.now().strftime("%H:%M:%S")
@@ -106,10 +113,14 @@ def parse_line(line: str, dash: Dashboard):
     """Parse a serial log line and update dashboard state."""
 
     # Boot info
-    m = re.search(r'\[Boot\] Reset reason: .+ \(boot #(\d+)\)', line)
+    m = re.search(r'\[Boot\] Reset reason: (.+?) \(boot #(\d+)\)', line)
     if m:
-        dash.boot_count = int(m.group(1))
-        dash.add_log(f"{GREEN}Boot #{dash.boot_count}{RESET}")
+        dash.boot_count = int(m.group(2))
+        dash.boot_time = time.time()
+        dash.add_log(f"{GREEN}Boot #{dash.boot_count} — {m.group(1)}{RESET}")
+
+    if "Non-clean reset" in line and "stabilisation" in line:
+        dash.add_log(f"{YELLOW}Non-clean reset — extra stabilisation delay{RESET}")
 
     # Role
     m = re.search(r'\[Role\] Booting as: (\w+)', line)
@@ -117,12 +128,26 @@ def parse_line(line: str, dash: Dashboard):
         dash.role = m.group(1)
         dash.add_log(f"Role: {BOLD}{dash.role}{RESET}")
 
+    # RoleConfig
+    m = re.search(r'\[RoleConfig\] (.+)', line)
+    if m:
+        dash.add_log(f"{CYAN}{m.group(1)}{RESET}")
+
     # SD card
     if "SD Card OK" in line or "SD mounted" in line:
         dash.sd_ok = True
+    m = re.search(r'\[OK\] SD card: (\d+) image', line)
+    if m:
+        dash.sd_ok = True
+        dash.sd_images = int(m.group(1))
+        dash.add_log(f"{GREEN}SD card: {dash.sd_images} image(s){RESET}")
     if "SD mount FAILED" in line or "SD card mount failed" in line:
         dash.sd_ok = False
         dash.add_log(f"{RED}SD card mount failed{RESET}")
+    if "No JPEG files" in line:
+        dash.sd_ok = True
+        dash.sd_images = 0
+        dash.add_log(f"{YELLOW}SD card OK but no JPEG files in /images/{RESET}")
 
     # LoRa init
     if "SX1280 ready" in line:
@@ -136,6 +161,24 @@ def parse_line(line: str, dash: Dashboard):
     m = re.search(r'\[OK\] WiFi AP: (\S+)', line)
     if m:
         dash.wifi_ssid = m.group(1)
+        dash.node_ssid = m.group(1)
+        dash.add_log(f"{GREEN}WiFi AP: {dash.wifi_ssid}{RESET}")
+
+    # WiFi IP
+    m = re.search(r'\[OK\] IP: (\S+)', line)
+    if m:
+        dash.wifi_ip = m.group(1)
+
+    # CoAP server
+    if "CoAP server on port" in line:
+        dash.coap_ok = True
+        dash.add_log(f"{GREEN}CoAP server started (port 5683){RESET}")
+    if "CoAP server failed" in line:
+        dash.coap_ok = False
+        dash.add_log(f"{RED}CoAP server failed to start{RESET}")
+    if "CoAP server skipped" in line:
+        dash.coap_ok = False
+        dash.add_log(f"{YELLOW}CoAP server skipped — no SD card{RESET}")
 
     # Election
     if "[Election]" in line:
@@ -171,8 +214,15 @@ def parse_line(line: str, dash: Dashboard):
             dash.nodes[nid].last_seen = time.time()
 
     # Beacon TX
-    if "[LoRa] Beacon TX" in line:
+    m = re.search(r'\[LoRa\] Beacon TX \((\d+) bytes\) — (\S+), (\d+) images', line)
+    if m:
         dash.last_beacon_tx = datetime.now().strftime("%H:%M:%S")
+        dash.beacon_tx_count += 1
+        dash.node_ssid = dash.node_ssid or m.group(2)
+        dash.sd_images = int(m.group(3))
+    elif "[LoRa] Beacon TX" in line:
+        dash.last_beacon_tx = datetime.now().strftime("%H:%M:%S")
+        dash.beacon_tx_count += 1
 
     # ── Harvest state machine ──
 
@@ -265,13 +315,68 @@ def parse_line(line: str, dash: Dashboard):
             dash.add_log(f"{RED}Harvest failed: {nid}{RESET}")
 
     # Deep sleep
-    if "Entering deep sleep" in line:
+    if "Entering deep sleep" in line or "entering deep sleep" in line:
         dash.add_log(f"{DIM}Node entering deep sleep{RESET}")
+    m = re.search(r'Entering deep sleep .+ timer (\d+)s', line)
+    if m:
+        dash.deep_sleep_timer = f"{m.group(1)}s"
+
+    # DeepSleep manager
+    if "[DeepSleep] Active timeout expired" in line:
+        dash.add_log(f"{YELLOW}Active timeout expired — going to sleep{RESET}")
 
     # Wake
     m = re.search(r'Wakeup: (.+)', line)
     if m:
         dash.add_log(f"{YELLOW}Wakeup: {m.group(1)}{RESET}")
+
+    # Wake ping/beacon
+    if "WAKE_PING received" in line:
+        dash.add_log(f"{CYAN}Wake ping received — sleep timer reset{RESET}")
+    if "WAKE_BEACON_REQ received" in line:
+        dash.add_log(f"{CYAN}Wake beacon request — sending beacon{RESET}")
+
+    # Fast-path wake
+    m = re.search(r'\[Wake\] Fast-path: restored role=(\w+), SSID=(\S+)', line)
+    if m:
+        dash.role = m.group(1)
+        dash.node_ssid = m.group(2)
+        dash.add_log(f"{GREEN}Fast wake: {m.group(1)} ({m.group(2)}){RESET}")
+
+    # RTOS tasks
+    if "[RTOS] Tasks created" in line:
+        dash.add_log(f"{GREEN}FreeRTOS tasks started{RESET}")
+
+    # ESP-IDF log_i format: "I (timestamp) Tag: message"
+    # SD mounted via log_i
+    if "SD mounted" in line and "Size:" in line:
+        dash.sd_ok = True
+        m = re.search(r'Size:\s*(\d+)\s*MB', line)
+        if m:
+            dash.add_log(f"{GREEN}SD mounted — {m.group(1)} MB{RESET}")
+
+    # Image count from log_i
+    m = re.search(r'Found (\d+) image\(s\) in /images/', line)
+    if m:
+        dash.sd_images = int(m.group(1))
+
+    # LoRa beacon enable
+    if "LoRa beacon TX + RX enabled" in line:
+        dash.lora_ok = True
+        dash.add_log(f"{GREEN}LoRa beacons enabled (AODV){RESET}")
+
+    # LoRa init warning
+    if "LoRa init failed" in line and "without beacons" in line:
+        dash.lora_ok = False
+        dash.add_log(f"{RED}LoRa init failed — running without beacons{RESET}")
+
+    # Promotion / demotion banners
+    if "PROMOTED TO ACTING GATEWAY" in line:
+        dash.role = "ACTING_GW"
+        dash.add_log(f"{GREEN}{BOLD}PROMOTED to Acting Gateway{RESET}")
+    if "DEMOTED BACK TO LEAF" in line:
+        dash.role = "LEAF"
+        dash.add_log(f"{YELLOW}Demoted back to Leaf{RESET}")
 
     # Self-copy
     if "self-copy" in line.lower() or "SELF" in line:
@@ -290,89 +395,115 @@ def render(dash: Dashboard):
     print(f"{BG_BLUE}{WHITE}{BOLD}  IOT Forest Cam — Live Dashboard  {RESET}")
     print()
 
-    # Status bar
+    # ── This Node ──
     role_color = GREEN if "GATEWAY" in dash.role.upper() else CYAN
-    sd_status = f"{GREEN}OK{RESET}" if dash.sd_ok else f"{RED}FAIL{RESET}"
-    lora_status = f"{GREEN}OK{RESET}" if dash.lora_ok else f"{RED}FAIL{RESET}"
+    sd_status = f"{GREEN}OK ({dash.sd_images} imgs){RESET}" if dash.sd_ok else f"{RED}FAIL{RESET}"
+    lora_status = f"{GREEN}OK{RESET}" if dash.lora_ok else f"{RED}--{RESET}"
+    coap_status = f"{GREEN}ON{RESET}" if dash.coap_ok else f"{DIM}OFF{RESET}"
 
+    print(f"  {BOLD}This Node{RESET}")
     print(f"  Role: {role_color}{BOLD}{dash.role}{RESET}  |  "
-          f"Boot: #{dash.boot_count}  |  "
-          f"SD: {sd_status}  |  "
+          f"SSID: {dash.node_ssid or dash.wifi_ssid or '?'}  |  "
+          f"Boot: #{dash.boot_count}")
+    print(f"  SD: {sd_status}  |  "
           f"LoRa: {lora_status}  |  "
-          f"SSID: {dash.wifi_ssid}  |  "
-          f"Total harvested: {dash.total_harvested}")
-    print()
+          f"CoAP: {coap_status}  |  "
+          f"IP: {dash.wifi_ip or '?'}")
 
-    # ── Discovered Nodes ──
-    print(f"  {BOLD}Discovered Nodes{RESET}")
-    print(f"  {'ID':<20} {'SSID':<20} {'Images':>6} {'RSSI':>6} {'Status':<12} {'Last Seen':<10}")
-    print(f"  {'-'*20} {'-'*20} {'-'*6} {'-'*6} {'-'*12} {'-'*10}")
+    # Uptime
+    if dash.boot_time:
+        uptime = int(time.time() - dash.boot_time)
+        mins, secs = divmod(uptime, 60)
+        print(f"  Uptime: {mins}m {secs}s  |  "
+              f"Beacons TX: {dash.beacon_tx_count}  |  "
+              f"Last beacon: {dash.last_beacon_tx or '--'}")
+    elif dash.beacon_tx_count > 0:
+        print(f"  Beacons TX: {dash.beacon_tx_count}  |  "
+              f"Last beacon: {dash.last_beacon_tx or '--'}")
 
-    if not dash.nodes:
-        print(f"  {DIM}(no nodes discovered yet){RESET}")
-    else:
-        for nid, node in sorted(dash.nodes.items()):
-            age = time.time() - node.last_seen
-            age_str = f"{int(age)}s ago" if age < 120 else f"{int(age/60)}m ago"
-
-            status_colors = {
-                "discovered": CYAN,
-                "harvesting": YELLOW,
-                "done": GREEN,
-                "failed": RED,
-            }
-            sc = status_colors.get(node.status, WHITE)
-
-            print(f"  {node.node_id:<20} {node.ssid:<20} {node.images:>6} "
-                  f"{node.rssi:>4}dBm {sc}{node.status:<12}{RESET} {age_str:<10}")
+    if dash.election_state:
+        print(f"  Election: {YELLOW}{dash.election_state}{RESET}")
+    if dash.deep_sleep_timer:
+        print(f"  Sleep timer: {dash.deep_sleep_timer}")
 
     print()
 
-    # ── Harvest Progress ──
+    # ── Discovered Nodes (gateway only, but show if any) ──
+    is_gateway = "GATEWAY" in dash.role.upper() or "ACTING_GW" in dash.role.upper()
+
+    if dash.nodes or is_gateway:
+        print(f"  {BOLD}Discovered Nodes{RESET}")
+        print(f"  {'ID':<20} {'SSID':<20} {'Images':>6} {'RSSI':>6} {'Status':<12} {'Last Seen':<10}")
+        print(f"  {'-'*20} {'-'*20} {'-'*6} {'-'*6} {'-'*12} {'-'*10}")
+
+        if not dash.nodes:
+            print(f"  {DIM}(no nodes discovered yet){RESET}")
+        else:
+            for nid, node in sorted(dash.nodes.items()):
+                age = time.time() - node.last_seen
+                age_str = f"{int(age)}s ago" if age < 120 else f"{int(age/60)}m ago"
+
+                status_colors = {
+                    "discovered": CYAN,
+                    "harvesting": YELLOW,
+                    "done": GREEN,
+                    "failed": RED,
+                }
+                sc = status_colors.get(node.status, WHITE)
+
+                print(f"  {node.node_id:<20} {node.ssid:<20} {node.images:>6} "
+                      f"{node.rssi:>4}dBm {sc}{node.status:<12}{RESET} {age_str:<10}")
+
+        print()
+
+    # ── Harvest Progress (gateway only, but show if active) ──
     h = dash.harvest
-    print(f"  {BOLD}Harvest Status{RESET}")
+    if h.phase != "IDLE" or is_gateway or dash.total_harvested > 0:
+        print(f"  {BOLD}Harvest Status{RESET}")
 
-    phase_colors = {
-        "IDLE": DIM,
-        "STARTING": YELLOW,
-        "WIFI_CONNECT": YELLOW,
-        "CONNECTED": CYAN,
-        "DOWNLOADING": BLUE,
-        "DONE": GREEN,
-        "FAILED": RED,
-    }
-    pc = phase_colors.get(h.phase, WHITE)
+        phase_colors = {
+            "IDLE": DIM,
+            "STARTING": YELLOW,
+            "WIFI_CONNECT": YELLOW,
+            "CONNECTED": CYAN,
+            "DOWNLOADING": BLUE,
+            "DONE": GREEN,
+            "FAILED": RED,
+        }
+        pc = phase_colors.get(h.phase, WHITE)
 
-    print(f"  Phase: {pc}{BOLD}{h.phase}{RESET}", end="")
-    if h.target_node:
-        print(f"  |  Target: {h.target_node}", end="")
-    if h.target_ssid:
-        print(f" ({h.target_ssid})", end="")
-    print()
+        print(f"  Phase: {pc}{BOLD}{h.phase}{RESET}", end="")
+        if h.target_node:
+            print(f"  |  Target: {h.target_node}", end="")
+        if h.target_ssid:
+            print(f" ({h.target_ssid})", end="")
+        if dash.total_harvested > 0:
+            print(f"  |  Total harvested: {dash.total_harvested}", end="")
+        print()
 
-    if h.phase == "DOWNLOADING" and h.total_blocks > 0:
-        pct = (h.current_block / h.total_blocks) * 100
-        bar_width = 30
-        filled = int(bar_width * h.current_block / h.total_blocks)
-        bar = f"{'█' * filled}{'░' * (bar_width - filled)}"
+        if h.phase == "DOWNLOADING" and h.total_blocks > 0:
+            pct = (h.current_block / h.total_blocks) * 100
+            bar_width = 30
+            filled = int(bar_width * h.current_block / h.total_blocks)
+            bar = f"{'█' * filled}{'░' * (bar_width - filled)}"
 
-        print(f"  Image: {h.current_image}/{h.total_images}  "
-              f"Block: {h.current_block}/{h.total_blocks}")
-        print(f"  [{bar}] {pct:.0f}%")
+            print(f"  Image: {h.current_image}/{h.total_images}  "
+                  f"Block: {h.current_block}/{h.total_blocks}")
+            print(f"  [{bar}] {pct:.0f}%")
 
-    if h.bytes_transferred > 0:
-        kb = h.bytes_transferred / 1024
-        print(f"  Transferred: {kb:.1f} KB  |  "
-              f"Images: {h.images_completed} OK, {h.images_failed} failed")
+        if h.bytes_transferred > 0:
+            kb = h.bytes_transferred / 1024
+            print(f"  Transferred: {kb:.1f} KB  |  "
+                  f"Images: {h.images_completed} OK, {h.images_failed} failed")
 
-    if h.last_filename:
-        print(f"  Last file: {h.last_filename}")
+        if h.last_filename:
+            print(f"  Last file: {h.last_filename}")
 
-    if h.start_time and h.phase not in ("IDLE", "DONE"):
-        elapsed = time.time() - h.start_time
-        print(f"  Elapsed: {int(elapsed)}s")
+        if h.start_time and h.phase not in ("IDLE", "DONE"):
+            elapsed = time.time() - h.start_time
+            print(f"  Elapsed: {int(elapsed)}s")
 
-    print()
+        print()
 
     # ── Log ──
     print(f"  {BOLD}Event Log{RESET}")
