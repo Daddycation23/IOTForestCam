@@ -1,6 +1,6 @@
 /**
  * @file LoRaBeacon.cpp
- * @brief LoRa beacon packet serialization and parsing
+ * @brief LoRa beacon packet serialization and parsing (v2: no SSID on wire)
  *
  * @author  CS Group 2
  * @date    2026
@@ -9,22 +9,17 @@
 #include "LoRaBeacon.h"
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Serialize
+// Serialize (v2 — fixed 15 bytes, no SSID)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 uint8_t BeaconPacket::serialize(uint8_t* buf, uint8_t maxLen) const {
-    // Calculate total packet size
-    uint8_t totalLen = BEACON_MIN_SIZE + ssidLen;
-
-    if (totalLen > maxLen || ssidLen > BEACON_MAX_SSID) {
-        return 0;
-    }
+    if (maxLen < BEACON_MIN_SIZE) return 0;
 
     uint8_t pos = 0;
 
     // Fixed header
     buf[pos++] = BEACON_MAGIC;          // offset 0
-    buf[pos++] = BEACON_VERSION;        // offset 1
+    buf[pos++] = BEACON_VERSION;        // offset 1 (0x02 = v2)
     buf[pos++] = packetType;            // offset 2
     buf[pos++] = ttl;                   // offset 3
 
@@ -35,35 +30,33 @@ uint8_t BeaconPacket::serialize(uint8_t* buf, uint8_t maxLen) const {
     // Node role
     buf[pos++] = nodeRole;              // offset 10
 
-    // SSID (length-prefixed variable)
-    buf[pos++] = ssidLen;               // offset 11
-    memcpy(&buf[pos], ssid, ssidLen);   // offset 12 .. 12+ssidLen-1
-    pos += ssidLen;
-
-    // Payload fields
-    buf[pos++] = imageCount;            // offset 12+N
-    buf[pos++] = batteryPct;            // offset 13+N
+    // Payload (no SSID in v2)
+    buf[pos++] = imageCount;            // offset 11
+    buf[pos++] = batteryPct;            // offset 12
 
     // Uptime (uint16 little-endian)
-    buf[pos++] = uptimeMin & 0xFF;      // offset 14+N (low byte)
-    buf[pos++] = (uptimeMin >> 8) & 0xFF; // offset 15+N (high byte)
+    buf[pos++] = uptimeMin & 0xFF;      // offset 13 (low byte)
+    buf[pos++] = (uptimeMin >> 8) & 0xFF; // offset 14 (high byte)
 
     return pos;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Parse
+// Parse (supports both v1 with SSID and v2 without)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 bool BeaconPacket::parse(const uint8_t* buf, uint8_t len) {
-    // Minimum check: header (12 bytes) + at least 0 SSID + 4 payload bytes
-    if (len < BEACON_MIN_SIZE) return false;
+    // Minimum check: need at least magic + version + type + ttl + nodeId(6) + role = 11 bytes
+    if (len < 11) return false;
 
     uint8_t pos = 0;
 
-    // Validate magic and version
-    if (buf[pos++] != BEACON_MAGIC)   return false;
-    if (buf[pos++] != BEACON_VERSION) return false;
+    // Validate magic
+    if (buf[pos++] != BEACON_MAGIC) return false;
+
+    // Version (0x01 = v1 with SSID, 0x02 = v2 without)
+    uint8_t version = buf[pos++];
+    if (version != 0x01 && version != BEACON_VERSION) return false;
 
     // Packet type
     packetType = buf[pos++];
@@ -82,27 +75,50 @@ bool BeaconPacket::parse(const uint8_t* buf, uint8_t len) {
     // Node role
     nodeRole = buf[pos++];
 
-    // SSID length
-    ssidLen = buf[pos++];
-    if (ssidLen > BEACON_MAX_SSID) return false;
+    if (version == 0x01) {
+        // v1: SSID on wire (backward compat)
+        if (pos >= len) return false;
+        ssidLen = buf[pos++];
+        if (ssidLen > BEACON_MAX_SSID) return false;
+        if (pos + ssidLen + 4 > len) return false;
 
-    // Check remaining bytes: ssidLen + 4 payload bytes
-    if (pos + ssidLen + 4 > len) return false;
+        memcpy(ssid, &buf[pos], ssidLen);
+        ssid[ssidLen] = '\0';
+        pos += ssidLen;
 
-    // SSID
-    memcpy(ssid, &buf[pos], ssidLen);
-    ssid[ssidLen] = '\0';      // Null-terminate for convenience
-    pos += ssidLen;
+        imageCount = buf[pos++];
+        batteryPct = buf[pos++];
+        uptimeMin = buf[pos] | (buf[pos + 1] << 8);
+    } else {
+        // v2: no SSID — derive from MAC
+        if (pos + 4 > len) return false;
 
-    // Payload fields
-    imageCount = buf[pos++];
-    batteryPct = buf[pos++];
+        imageCount = buf[pos++];
+        batteryPct = buf[pos++];
+        uptimeMin = buf[pos] | (buf[pos + 1] << 8);
 
-    // Uptime (uint16 little-endian)
-    uptimeMin = buf[pos] | (buf[pos + 1] << 8);
-    pos += 2;
+        // Derive SSID from MAC
+        deriveSsid();
+    }
 
     return true;
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Derive SSID from MAC
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+void BeaconPacket::deriveSsid() {
+    macToSsid(nodeId, nodeRole, ssid, sizeof(ssid));
+    ssidLen = strlen(ssid);
+}
+
+void BeaconPacket::macToSsid(const uint8_t mac[6], uint8_t role, char* out, size_t outLen) {
+    if (role == NODE_ROLE_GATEWAY) {
+        snprintf(out, outLen, "ForestCam-GW-%02X%02X", mac[4], mac[5]);
+    } else {
+        snprintf(out, outLen, "ForestCam-%02X%02X", mac[4], mac[5]);
+    }
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

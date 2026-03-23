@@ -113,17 +113,16 @@ void DeepSleepManager::prepareRadioForSleep(LoRaRadio& radio) {
 }
 
 void DeepSleepManager::enterSleep() {
-    log_i("%s: Entering deep sleep — timer %lus + DIO1 armed, boot #%lu",
+    log_i("%s: Entering deep sleep — timer %lus, boot #%lu",
           TAG, (unsigned long)SLEEP_TIMER_WAKEUP_S, rtcBootCount);
 
     Serial.flush();
     delay(20);
 
-    // Primary: timer wakeup (reliable on all boards)
+    // Timer-only wakeup (reliable on all boards).
+    // DIO1 ext1 wakeup removed — SX1280 LoRa wake is unreliable on LILYGO T3-S3
+    // due to PA power and SPI bus float issues during deep sleep (commit 8665061).
     esp_sleep_enable_timer_wakeup((uint64_t)SLEEP_TIMER_WAKEUP_S * 1000000ULL);
-
-    // Secondary: DIO1 ext1 wakeup (may not work on LILYGO T3-S3 due to PA power)
-    esp_sleep_enable_ext1_wakeup(1ULL << LORA_DIO1, ESP_EXT1_WAKEUP_ANY_HIGH);
 
     esp_deep_sleep_start();
     // ── Does not return ──

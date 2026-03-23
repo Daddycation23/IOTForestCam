@@ -194,8 +194,14 @@ static void relayCachedCleanup() {
         dir.close();
     }
 
+    // Return to AP mode after serving on gateway network
+    WiFi.disconnect(true);
+    WiFi.mode(WIFI_AP);
+    WiFi.softAP(_apSSID, AP_PASS);
+    vTaskDelay(pdMS_TO_TICKS(200));
+
     _relayBusy = false;
-    Serial.println("[Relay] Cached image cleanup complete — ready for next harvest\n");
+    Serial.printf("[Relay] Cached image cleanup complete — back to AP %s\n", _apSSID);
 }
 
 // =============================================================
@@ -317,11 +323,9 @@ static void relayHarvest(const HarvestCmdPacket& cmd) {
         WiFi.disconnect(true);
     }
 
-    // ── Return to AP-only mode ───────────────────────────────
-    WiFi.mode(WIFI_AP);
-    WiFi.softAP(_apSSID, AP_PASS);
+    // ── Phase 2: Connect to gateway AP as STA to serve cached images ──
+    WiFi.disconnect(true);
     vTaskDelay(pdMS_TO_TICKS(200));
-    Serial.printf("[Relay] Back to AP mode: %s\n", _apSSID);
 
     // ── Send HARVEST_ACK via LoRa (thread-safe) ──────────────
     Serial.printf("[Relay] ACK: status=%s, images=%u, bytes=%lu\n",
@@ -335,25 +339,50 @@ static void relayHarvest(const HarvestCmdPacket& cmd) {
         loraStartReceiveSafe();
     }
 
-    // ── Start serving cached images for the gateway ─────────
-    if (ack.status == HARVEST_STATUS_OK && ack.imageCount > 0) {
-        if (cachedStorage.beginScanOnly()) {
-            if (cachedCoapServer.begin()) {
-                _relayCachedServing = true;
-                _relayCachedStartMs = millis();
-                Serial.printf("[Relay] Serving %u cached image(s) via CoAP — "
-                              "gateway can connect to %s\n",
-                              cachedStorage.imageCount(), _apSSID);
-                Serial.println("[Relay] Harvest command complete — waiting for gateway download\n");
-                return;  // _relayBusy stays true
+    // ── Start serving cached images via gateway's WiFi network ──
+    if (ack.status == HARVEST_STATUS_OK && ack.imageCount > 0 &&
+        rtcGatewayKnown && rtcGatewaySSID[0] != '\0') {
+        // Connect to gateway AP as STA
+        WiFi.mode(WIFI_STA);
+        WiFi.begin(rtcGatewaySSID, AP_PASS);
+
+        uint32_t gwConnStart = millis();
+        while (WiFi.status() != WL_CONNECTED && millis() - gwConnStart < HARVEST_WIFI_TIMEOUT_MS) {
+            vTaskDelay(pdMS_TO_TICKS(250));
+            Serial.print(".");
+        }
+        Serial.println();
+
+        if (WiFi.status() == WL_CONNECTED) {
+            Serial.printf("[Relay] Connected to gateway AP %s (IP: %s)\n",
+                          rtcGatewaySSID, WiFi.localIP().toString().c_str());
+
+            if (cachedStorage.beginScanOnly()) {
+                if (cachedCoapServer.begin()) {
+                    _relayCachedServing = true;
+                    _relayCachedStartMs = millis();
+                    Serial.printf("[Relay] Serving %u cached image(s) via CoAP on gateway network\n",
+                                  cachedStorage.imageCount());
+                    Serial.println("[Relay] Harvest command complete — waiting for gateway download\n");
+                    return;  // _relayBusy stays true
+                } else {
+                    Serial.println("[Relay] Failed to start cached CoAP server");
+                    cachedStorage.endScanOnly();
+                }
             } else {
-                Serial.println("[Relay] Failed to start cached CoAP server");
-                cachedStorage.endScanOnly();
+                Serial.println("[Relay] Failed to scan /cached/ directory");
             }
         } else {
-            Serial.println("[Relay] Failed to scan /cached/ directory");
+            WiFi.disconnect(true);
+            Serial.printf("[Relay] Failed to connect to gateway AP %s\n", rtcGatewaySSID);
         }
     }
+
+    // ── Fallback: return to AP mode ──────────────────────────
+    WiFi.mode(WIFI_AP);
+    WiFi.softAP(_apSSID, AP_PASS);
+    vTaskDelay(pdMS_TO_TICKS(200));
+    Serial.printf("[Relay] Back to AP mode: %s\n", _apSSID);
 
     _relayBusy = false;
     Serial.println("[Relay] Harvest command complete\n");
@@ -428,16 +457,35 @@ static void initGateway() {
         loraRadio.startReceive();
     }
 
-    // ── WiFi STA (connect only during harvest) ───────────────
-    WiFi.mode(WIFI_STA);
-    WiFi.disconnect(true);
+    // ── WiFi AP (persistent — leaves connect to us as STA) ───
+    uint8_t gwMac[6];
+    WiFi.macAddress(gwMac);
+    static char _gwAPSSID[32];
+    snprintf(_gwAPSSID, sizeof(_gwAPSSID), "ForestCam-GW-%02X%02X", gwMac[4], gwMac[5]);
+
+    WiFi.mode(WIFI_AP);
+    WiFi.softAP(_gwAPSSID, AP_PASS);
+    delay(100);
+    WiFi.setTxPower(WIFI_POWER_8_5dBm);
+    IPAddress gwIP = WiFi.softAPIP();
+    Serial.printf("[OK] Gateway WiFi AP: %s (pass: %s)\n", _gwAPSSID, AP_PASS);
+    Serial.printf("[OK] Gateway IP: %s\n", gwIP.toString().c_str());
+
+    // ── Gateway CoAP server (receives /announce from leaves) ──
+    // Gateway also runs a CoAP server to handle leaf announcements.
+    // The gateway's own images (if any) are served from here too.
+    if (coapServer.begin()) {
+        Serial.printf("[OK] Gateway CoAP server on port %u (for /announce)\n", COAP_DEFAULT_PORT);
+    } else {
+        Serial.println("[WARN] Gateway CoAP server failed — announce-based harvest unavailable");
+    }
 
     // ── OLED ready screen ────────────────────────────────────
     display.clearDisplay();
     display.setCursor(0, 0);
     display.println("Gateway (RTOS+AODV)");
-    display.println("Listening for");
-    display.println("beacons...");
+    display.printf("AP: %s\n", _gwAPSSID);
+    display.printf("IP: %s\n", gwIP.toString().c_str());
     display.println();
     display.println("Nodes: 0  Rtes: 0");
     display.println("State: IDLE");
@@ -712,11 +760,10 @@ static void taskLoRaGateway(void* param) {
             gwBeacon.ttl = 2;
             WiFi.macAddress(gwBeacon.nodeId);
             gwBeacon.nodeRole   = NODE_ROLE_GATEWAY;
-            gwBeacon.ssidLen    = 0;
-            gwBeacon.ssid[0]    = '\0';
             gwBeacon.imageCount = 0;
             gwBeacon.batteryPct = 0xFF;  // USB powered
             gwBeacon.uptimeMin  = (uint16_t)(millis() / 60000);
+            gwBeacon.deriveSsid();  // Populate ssid from MAC for logging
 
             uint8_t buf[BEACON_MAX_SIZE];
             uint8_t len = gwBeacon.serialize(buf, sizeof(buf));
@@ -960,13 +1007,10 @@ static void taskLoRaLeafRelay(void* param) {
             } else {
                 beacon.nodeRole = NODE_ROLE_LEAF;
             }
-            beacon.ssidLen    = strlen(_apSSID);
-            if (beacon.ssidLen > BEACON_MAX_SSID) beacon.ssidLen = BEACON_MAX_SSID;
-            memcpy(beacon.ssid, _apSSID, beacon.ssidLen);
-            beacon.ssid[beacon.ssidLen] = '\0';
             beacon.imageCount = (g_role == NODE_ROLE_RELAY && _relayCachedServing)
                                     ? cachedStorage.imageCount()
                                     : storage.imageCount();
+            beacon.deriveSsid();  // Populate ssid from MAC for logging
             beacon.batteryPct = 0xFF;
             beacon.uptimeMin  = (uint16_t)(millis() / 60000);
 
@@ -1072,19 +1116,9 @@ static void taskLoRaLeafRelay(void* param) {
                     break;
                 }
 
-                case PKT_TYPE_WAKE_PING:
-                    // Wake ping received — just an activity marker, no action needed
-                    deepSleepMgr.onActivity();
-                    Serial.println("[LoRa] WAKE_PING received — resetting sleep timer");
-                    break;
-
-                case PKT_TYPE_WAKE_BEACON_REQ:
-                    // Gateway requesting a beacon — send one immediately
-                    deepSleepMgr.onActivity();
-                    Serial.println("[LoRa] WAKE_BEACON_REQ received — sending beacon");
-                    // The next beacon TX cycle will handle it (or we could force one here)
-                    lastBeaconMs = 0;  // Force immediate beacon
-                    break;
+                // WAKE_PING (0x40) and WAKE_BEACON_REQ (0x41) removed:
+                // SX1280 LoRa wake from deep sleep is unreliable (commit 8665061).
+                // Timer-based wake (180s) is the only wake mechanism.
 
                 case PKT_TYPE_ELECTION:
                 case PKT_TYPE_SUPPRESS:
@@ -1423,6 +1457,8 @@ normal_boot:
     if (g_role == NODE_ROLE_GATEWAY) {
         xTaskCreatePinnedToCore(taskLoRaGateway,  "LoRa_GW",     STACK_LORA,        nullptr, PRIORITY_LORA,        &hTaskLoRa,       CORE_LORA);
         xTaskCreatePinnedToCore(taskHarvestGateway, "Harvest_GW", STACK_HARVEST,     nullptr, PRIORITY_HARVEST,     &hTaskHarvest,    CORE_NETWORK);
+        // Gateway also runs CoAP server to receive /announce from leaves
+        xTaskCreatePinnedToCore(taskCoapServerLoop, "CoAP_Srv",  STACK_COAP_SERVER, nullptr, PRIORITY_COAP_SERVER, &hTaskCoapServer, CORE_NETWORK);
     } else {
         xTaskCreatePinnedToCore(taskLoRaLeafRelay, "LoRa_LR",    STACK_LORA,        nullptr, PRIORITY_LORA,        &hTaskLoRa,       CORE_LORA);
         xTaskCreatePinnedToCore(taskCoapServerLoop, "CoAP_Srv",  STACK_COAP_SERVER, nullptr, PRIORITY_COAP_SERVER, &hTaskCoapServer, CORE_NETWORK);

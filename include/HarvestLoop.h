@@ -163,7 +163,6 @@ private:
     void _doStart();
     void _doRouteDiscovery();
     void _doDisconnect();
-    void _doWakeNode();
     void _doConnect();
     void _doCoapInit();
     void _doDownload();

@@ -103,7 +103,8 @@ void HarvestLoop::tick() {
             _doDisconnect();
             break;
         case HARVEST_WAKE_NODE:
-            _doWakeNode();
+            // WAKE_NODE removed (LoRa wake unreliable). Fall through to CONNECT.
+            _enterState(HARVEST_CONNECT);
             break;
         case HARVEST_CONNECT:
             _doConnect();
@@ -239,48 +240,8 @@ void HarvestLoop::_doDisconnect() {
 
     log_d("%s: WiFi disconnected", TAG);
 
-    // Peek at next node — if it sent a beacon recently, skip WAKE_NODE (saves 12s).
-    // The node is already awake, so we can connect directly.
-    bool skipWake = false;
-    if (!_relayHarvesting) {
-        NodeEntry peek;
-        if (registryLock()) {
-            if (_registry.getNextToHarvest(peek)) {
-                uint32_t age = millis() - peek.lastSeenMs;
-                if (age < 60000) {
-                    skipWake = true;
-                    Serial.printf("[%s] %s beacon %lus ago — skipping WAKE_NODE\n",
-                                  TAG, peek.ssid, age / 1000);
-                }
-            }
-            registryUnlock();
-        }
-    }
-
-    _enterState(skipWake ? HARVEST_CONNECT : HARVEST_WAKE_NODE);
-}
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// State: WAKE_NODE — Send LoRa wake ping before WiFi connect
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-void HarvestLoop::_doWakeNode() {
-    // Send a WAKE_PING to trigger DIO1 on the target leaf node.
-    // The leaf may be in deep sleep and needs a LoRa packet to wake.
-    if (_loraRadio) {
-        uint8_t wakePkt[3] = { 0xFC, 0x01, 0x40 };  // magic, version, WAKE_PING
-        loraSendSafe(wakePkt, sizeof(wakePkt));
-        loraStartReceiveSafe();
-
-        Serial.printf("[%s] WAKE_PING broadcast sent — waiting %ums for sleeping nodes to reboot\n",
-                      TAG, (unsigned)12000);
-    }
-
-    // Wait for the leaf to complete full deep-sleep reboot:
-    // SD mount (8-21s) + LoRa init + WiFi AP startup.
-    // Combined with HARVEST_WIFI_TIMEOUT_MS (25s) = 37s total window.
-    vTaskDelay(pdMS_TO_TICKS(12000));
-
+    // Gateway-as-AP: no WAKE_NODE needed. Leaves connect to gateway AP
+    // on timer wake and announce themselves. Go directly to CONNECT.
     _enterState(HARVEST_CONNECT);
 }
 
