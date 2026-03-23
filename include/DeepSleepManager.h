@@ -29,8 +29,8 @@
 // ─── Deep Sleep Configuration ────────────────────────────────
 static constexpr uint32_t SLEEP_ACTIVE_TIMEOUT_MS     = 120000;  // Stay awake 2 min after boot/wake
 static constexpr uint32_t SLEEP_TIMER_WAKEUP_S        = 180;     // 3 min timer wake (primary wake source)
-static constexpr uint32_t SLEEP_WAKE_CMD_TIMEOUT_MS   = 3000;    // Wait 3s for command after wake
-static constexpr uint32_t SLEEP_WAKE_SETTLE_DELAY_MS  = 500;     // Sender waits 500ms between ping and cmd
+// SLEEP_WAKE_CMD_TIMEOUT_MS removed (WAKE_PING no longer used)
+// SLEEP_WAKE_SETTLE_DELAY_MS removed (WAKE_PING no longer used)
 
 // ─── RTC-persistent state (survives deep sleep) ──────────────
 // These are declared in DeepSleepManager.cpp with RTC_DATA_ATTR

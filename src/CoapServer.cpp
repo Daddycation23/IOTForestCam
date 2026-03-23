@@ -456,6 +456,7 @@ void CoapServer::_handleAnnouncePost(CoapMessage& req,
         CoapMessage resp = _makeResponse(req, COAP_CREATED);
         _sendResponse(resp, remoteIP, remotePort);
     } else {
+        Serial.println("[CoAP] WARNING: Announce queue full — message dropped");
         _sendError(req, COAP_INTERNAL_ERROR, "Announce queue full",
                    remoteIP, remotePort);
     }

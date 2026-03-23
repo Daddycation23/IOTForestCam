@@ -42,10 +42,14 @@ static constexpr uint32_t STACK_OLED          = 2048;
 static constexpr uint8_t LORA_TX_QUEUE_SIZE       = 8;
 static constexpr uint8_t HARVEST_CMD_QUEUE_SIZE   = 2;
 static constexpr uint8_t RELAY_HARVEST_QUEUE_SIZE = 2;
-static constexpr uint8_t ANNOUNCE_QUEUE_SIZE      = 4;
+static constexpr uint8_t ANNOUNCE_QUEUE_SIZE      = 8;   // Supports up to 8 simultaneous leaf announces
 
 // ─── Mutex Timeout ───────────────────────────────────────────
 static constexpr TickType_t MUTEX_TIMEOUT = pdMS_TO_TICKS(1000);
+
+// ─── Locking Order (if both needed) ─────────────────────────
+// Acquire xLoRaMutex FIRST, then xRegistryMutex.
+// Never hold both simultaneously if possible.
 
 // ─── LoRa TX Queue Item ─────────────────────────────────────
 struct LoRaTxRequest {

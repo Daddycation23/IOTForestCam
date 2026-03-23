@@ -423,6 +423,18 @@ void HarvestLoop::_doRelayCmd() {
     strncpy(_relaySSID, relayEntry.ssid, sizeof(_relaySSID) - 1);
     _relaySSID[sizeof(_relaySSID) - 1] = '\0';
 
+    // Validate relay SSID
+    if (_relaySSID[0] == '\0') {
+        Serial.printf("[%s] Relay SSID is empty — skipping node\n", TAG);
+        if (registryLock()) {
+            _registry.markHarvested(_currentNode.nodeId);
+            registryUnlock();
+        }
+        _stats.nodesFailed++;
+        _enterState(HARVEST_DISCONNECT);
+        return;
+    }
+
     // Build HARVEST_CMD
     _relayCmdIdCounter++;
     _pendingCmdId = _relayCmdIdCounter;
@@ -446,7 +458,9 @@ void HarvestLoop::_doRelayCmd() {
                       TAG, _relaySSID, _currentNode.ssid, _pendingCmdId);
     }
 
+    portENTER_CRITICAL(&_relayAckMux);
     _relayAckReceived = false;
+    portEXIT_CRITICAL(&_relayAckMux);
     _relayHarvesting = true;
     _enterState(HARVEST_RELAY_WAIT);
 }
@@ -547,13 +561,20 @@ void HarvestLoop::_doDownload() {
     CoapClientError err = _coapClient.get(leafIP, leafPort, "info", infoBuf, infoLen);
 
     uint8_t imageCount = 0;
-    if (err == COAP_CLIENT_OK) {
+    if (err == COAP_CLIENT_OK && infoLen > 0) {
         infoBuf[infoLen] = '\0';
         Serial.printf("Response: %s\n", (char*)infoBuf);
 
         const char* countKey = strstr((char*)infoBuf, "\"count\":");
         if (countKey) {
-            imageCount = (uint8_t)atoi(countKey + 8);
+            int parsed = atoi(countKey + 8);
+            if (parsed > 0 && parsed <= 255) {
+                imageCount = (uint8_t)parsed;
+            } else {
+                Serial.printf("[WARN] Invalid image count: %d\n", parsed);
+            }
+        } else {
+            Serial.println("[WARN] /info response missing \"count\" field");
         }
     } else {
         Serial.printf("[ERROR] GET /info failed: %s\n", coapClientErrorStr(err));

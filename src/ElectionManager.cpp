@@ -67,7 +67,11 @@ void ElectionManager::tick() {
         case ELECT_ACTING_GATEWAY:  _tickActingGateway();  break;
         case ELECT_RECLAIMED:       _tickReclaimed();      break;
         case ELECT_PROMOTED:
-            _promoteToGateway();
+            // Guard: only promote once (re-entry safe if tick is called again
+            // before state transition completes)
+            if (_activeRole != NODE_ROLE_GATEWAY) {
+                _promoteToGateway();
+            }
             _enterState(ELECT_ACTING_GATEWAY);
             break;
     }
