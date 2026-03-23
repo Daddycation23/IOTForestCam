@@ -123,6 +123,20 @@ public:
                         uint8_t* responseBuf, size_t& responseLen);
 
     /**
+     * Send a single CON POST request with a payload.
+     * Used for leaf-initiated announce (POST /announce).
+     *
+     * @param serverIP     Gateway IP
+     * @param serverPort   CoAP port (5683)
+     * @param uriPath      Path (e.g., "announce")
+     * @param payload      Request body
+     * @param payloadLen   Payload size in bytes
+     */
+    CoapClientError post(IPAddress serverIP, uint16_t serverPort,
+                         const char* uriPath,
+                         const uint8_t* payload, size_t payloadLen);
+
+    /**
      * Download an image via Block2 transfer.
      * Streams blocks to SD card file and computes Fletcher-16 on-the-fly.
      *

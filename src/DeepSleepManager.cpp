@@ -17,6 +17,8 @@ RTC_DATA_ATTR uint8_t  rtcSavedRole   = 0;
 RTC_DATA_ATTR int8_t   rtcLastImgIdx  = -1;
 RTC_DATA_ATTR char     rtcSavedSSID[32] = {0};
 RTC_DATA_ATTR bool     rtcStateValid  = false;
+RTC_DATA_ATTR bool     rtcGatewayKnown = false;
+RTC_DATA_ATTR char     rtcGatewaySSID[32] = {0};
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Constructor

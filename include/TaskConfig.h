@@ -42,6 +42,7 @@ static constexpr uint32_t STACK_OLED          = 2048;
 static constexpr uint8_t LORA_TX_QUEUE_SIZE       = 8;
 static constexpr uint8_t HARVEST_CMD_QUEUE_SIZE   = 2;
 static constexpr uint8_t RELAY_HARVEST_QUEUE_SIZE = 2;
+static constexpr uint8_t ANNOUNCE_QUEUE_SIZE      = 4;
 
 // ─── Mutex Timeout ───────────────────────────────────────────
 static constexpr TickType_t MUTEX_TIMEOUT = pdMS_TO_TICKS(1000);
@@ -50,6 +51,13 @@ static constexpr TickType_t MUTEX_TIMEOUT = pdMS_TO_TICKS(1000);
 struct LoRaTxRequest {
     uint8_t data[64];
     uint8_t length;
+};
+
+// ─── Announce Queue Item (leaf-initiated harvest) ───────────
+struct AnnounceMessage {
+    uint8_t  nodeId[6];     // Leaf's MAC address
+    uint8_t  ip[4];         // Leaf's STA IP (e.g., 192.168.4.2)
+    uint8_t  imageCount;    // Number of images available
 };
 
 // ─── Harvest Event Bits ──────────────────────────────────────
@@ -63,6 +71,7 @@ extern SemaphoreHandle_t  xRegistryMutex;   // Guards NodeRegistry R/W
 extern QueueHandle_t      xLoRaTxQueue;     // LoRa TX requests from any core
 extern QueueHandle_t      xHarvestCmdQueue; // Harvest trigger (Core 0 → Core 1)
 extern QueueHandle_t      xRelayHarvestQueue; // Relay harvest cmd (Core 0 → Core 1)
+extern QueueHandle_t      xAnnounceQueue;    // Leaf announce msgs (CoAP server → harvest task)
 extern EventGroupHandle_t xHarvestEvents;   // Harvest lifecycle events
 
 // ─── Task Handles ────────────────────────────────────────────

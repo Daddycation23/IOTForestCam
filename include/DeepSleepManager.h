@@ -40,6 +40,8 @@ extern RTC_DATA_ATTR uint8_t  rtcSavedRole;
 extern RTC_DATA_ATTR int8_t   rtcLastImgIdx;
 extern RTC_DATA_ATTR char     rtcSavedSSID[32];
 extern RTC_DATA_ATTR bool     rtcStateValid;
+extern RTC_DATA_ATTR bool     rtcGatewayKnown;
+extern RTC_DATA_ATTR char     rtcGatewaySSID[32];
 
 // ─── DeepSleepManager Class ─────────────────────────────────
 

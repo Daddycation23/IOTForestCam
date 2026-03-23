@@ -37,6 +37,9 @@ struct NodeEntry {
     bool     harvested;                     ///< Already downloaded this cycle?
     bool     active;                        ///< Slot in use?
 
+    // ── Announce fields (leaf-initiated harvest) ────────────
+    uint8_t  announcedIP[4];                ///< STA IP from announce (0.0.0.0 if not announced)
+
     // ── AODV routing fields ─────────────────────────────────
     uint8_t  hopCount;                      ///< 1 = direct, 2+ = multi-hop
     uint8_t  nextHopId[6];                  ///< Relay MAC for multi-hop nodes
@@ -60,6 +63,13 @@ public:
      * @return true if node was added or updated.
      */
     bool update(const BeaconPacket& beacon, float rssi);
+
+    /**
+     * Update or create a node entry from an announce message.
+     * Used for leaf-initiated harvest: leaf sends its MAC, IP, and image count.
+     * @return true if a new node was inserted.
+     */
+    bool updateFromAnnounce(const uint8_t nodeId[6], const uint8_t ip[4], uint8_t imageCount);
 
     /**
      * Remove entries not heard for REGISTRY_EXPIRY_MS.

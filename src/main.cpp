@@ -75,7 +75,8 @@
 NodeRole g_role = NODE_ROLE_LEAF;
 /// Runtime role — may differ from g_role when a relay promotes to gateway.
 /// Checked every loop() iteration to select loopGateway() vs loopLeafRelay().
-NodeRole _activeRole = NODE_ROLE_LEAF;
+/// Atomic: written by electionMgr on Core 0, read by loop() on Core 1.
+std::atomic<uint8_t> _activeRole{NODE_ROLE_LEAF};
 
 // ─── Shared hardware ──────────────────────────────────────────
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
@@ -119,8 +120,8 @@ static const char* AP_SSID_PREFIX = "ForestCam";
 static const char* AP_PASS        = "forestcam123";
 static char _apSSID[32];
 
-static bool    _loraReady    = false;
-static bool    _gwLoraReady  = false;   // Gateway LoRa status (set in initGateway)
+static volatile bool _loraReady    = false;  // Written in setup(), read in tasks
+static volatile bool _gwLoraReady  = false;  // Gateway LoRa status (set in initGateway)
 static std::atomic<bool> _relayBusy{false};        // Accessed from Core 0 + Core 1
 static std::atomic<uint8_t> _relayCmdId{0};
 
@@ -133,8 +134,12 @@ static std::atomic<uint32_t> _relayCachedStartMs{0};       // When we started se
 static constexpr uint32_t RELAY_CACHED_TIMEOUT_MS = 120000;  // Auto-cleanup after 2 min
 
 // ─── Gateway timing ───────────────────────────────────────────
-static constexpr uint32_t HARVEST_LISTEN_PERIOD_MS = 180000; // 3 min between harvest cycles
+static constexpr uint32_t HARVEST_LISTEN_PERIOD_MS = 180000; // 3 min max between harvest cycles
+static constexpr uint32_t HARVEST_REACTIVE_DELAY_MS = 15000; // 15s collect window after first new beacon
 static constexpr uint32_t ROUTE_DISCOVERY_DELAY_MS = 15000;  // RREQ 15 s after boot
+
+// Beacon-reactive harvest: set by beacon RX when a new/reappeared node is detected
+static volatile uint32_t _lastNewBeaconMs = 0;
 
 
 // =============================================================
@@ -509,25 +514,56 @@ static void initLeafRelay() {
         }
     }
 
-    // ── WiFi AP ──────────────────────────────────────────────
-    displayStatus("Starting WiFi AP...");
-
+    // ── WiFi Setup ──────────────────────────────────────────
     uint8_t mac[6];
     WiFi.macAddress(mac);
     snprintf(_apSSID, sizeof(_apSSID), "%s-%02X%02X",
              AP_SSID_PREFIX, mac[4], mac[5]);
 
-    WiFi.mode(WIFI_AP);
-    WiFi.softAP(_apSSID, AP_PASS);
-    delay(100);
+    // On timer wake with known gateway: connect as STA for announce-based harvest
+    bool _leafStaMode = false;
+    if ((DeepSleepManager::wasWokenByTimer() || DeepSleepManager::wasWokenByLoRa())
+        && rtcGatewayKnown && rtcGatewaySSID[0] != '\0') {
 
-    WiFi.setTxPower(WIFI_POWER_8_5dBm);
+        displayStatus("STA connect...");
+        Serial.printf("[Leaf] Connecting to gateway AP: %s\n", rtcGatewaySSID);
+        WiFi.mode(WIFI_STA);
+        WiFi.setTxPower(WIFI_POWER_8_5dBm);
+        WiFi.begin(rtcGatewaySSID, AP_PASS);
 
-    IPAddress ip = WiFi.softAPIP();
-    Serial.printf("[OK] WiFi AP: %s (pass: %s)\n", _apSSID, AP_PASS);
-    Serial.printf("[OK] IP: %s\n", ip.toString().c_str());
+        uint32_t connectStart = millis();
+        while (WiFi.status() != WL_CONNECTED &&
+               millis() - connectStart < HARVEST_WIFI_TIMEOUT_MS) {
+            vTaskDelay(pdMS_TO_TICKS(250));
+            Serial.print(".");
+        }
+
+        if (WiFi.status() == WL_CONNECTED) {
+            _leafStaMode = true;
+            Serial.printf("\n[Leaf] Connected to gateway! STA IP: %s\n",
+                          WiFi.localIP().toString().c_str());
+            deepSleepMgr.onActivity();
+        } else {
+            Serial.println("\n[Leaf] Gateway connect failed — falling back to AP mode");
+            WiFi.disconnect(true);
+        }
+    }
+
+    // Normal AP mode (cold boot, relay, or STA connect failed)
+    if (!_leafStaMode) {
+        displayStatus("Starting WiFi AP...");
+        WiFi.mode(WIFI_AP);
+        WiFi.softAP(_apSSID, AP_PASS);
+        delay(100);
+        WiFi.setTxPower(WIFI_POWER_8_5dBm);
+
+        IPAddress ip = WiFi.softAPIP();
+        Serial.printf("[OK] WiFi AP: %s (pass: %s)\n", _apSSID, AP_PASS);
+        Serial.printf("[OK] IP: %s\n", ip.toString().c_str());
+    }
 
     // ── CoAP Server (leaf only — relay uses cachedCoapServer on demand) ──
+    // Binds to 0.0.0.0 — works on both AP and STA interfaces
     if (_sdReady && g_role != NODE_ROLE_RELAY) {
         if (!coapServer.begin()) {
             displayStatus("CoAP FAILED!");
@@ -542,7 +578,31 @@ static void initLeafRelay() {
         Serial.println("  GET /image/{n}        — Image via Block2 transfer");
         Serial.println("  GET /checksum/{n}     — Fletcher-16 checksum (JSON)");
         Serial.println("  GET /.well-known/core — Resource discovery");
+        if (_leafStaMode) {
+            Serial.println("  POST /announce        — Leaf-initiated harvest");
+        }
         Serial.println();
+
+        // Send announce to gateway if in STA mode
+        if (_leafStaMode) {
+            uint8_t announcePayload[7];
+            memcpy(announcePayload, mac, 6);
+            announcePayload[6] = storage.imageCount();
+
+            CoapClient announceClient;
+            announceClient.begin();
+            CoapClientError err = announceClient.post(
+                IPAddress(192, 168, 4, 1), COAP_DEFAULT_PORT,
+                "announce", announcePayload, 7);
+            announceClient.stop();
+
+            if (err == COAP_CLIENT_OK) {
+                Serial.println("[Leaf] Announce sent — waiting for gateway to download");
+                deepSleepMgr.onActivity();  // Fresh 120s from now
+            } else {
+                Serial.printf("[Leaf] Announce failed (err=%d)\n", err);
+            }
+        }
     } else {
         Serial.println("[WARN] CoAP server skipped — no SD card available");
     }
@@ -566,7 +626,10 @@ static void initLeafRelay() {
         harvestLoop.setNodeBlockedCallback([](const uint8_t nodeId[6]) -> bool {
             return serialCmd.isNodeBlocked(nodeId);
         });
-        electionMgr.begin(mac, g_role);
+        // On timer wake, pass RTC gateway knowledge to skip unnecessary election
+        bool gwFromRtc = (DeepSleepManager::wasWokenByTimer() || DeepSleepManager::wasWokenByLoRa())
+                         && rtcGatewayKnown;
+        electionMgr.begin(mac, g_role, gwFromRtc);
     }
 
     // ── OLED ready screen ────────────────────────────────────
@@ -574,7 +637,8 @@ static void initLeafRelay() {
     display.setCursor(0, 0);
     display.println(g_role == NODE_ROLE_RELAY ? "Relay (AODV)" : "Leaf (AODV)");
     display.printf("AP: %s\n", _apSSID);
-    display.printf("IP: %s\n", ip.toString().c_str());
+    IPAddress displayIP = _leafStaMode ? WiFi.localIP() : WiFi.softAPIP();
+    display.printf("IP: %s\n", displayIP.toString().c_str());
     display.printf("CoAP: %s\n", _sdReady ? ":5683" : "OFF");
     display.printf("Imgs: %d  LoRa:%s\n",
                    _sdReady ? storage.imageCount() : 0, _loraReady ? "OK" : "NO");
@@ -677,9 +741,13 @@ static void taskLoRaGateway(void* param) {
                 case BEACON_TYPE_BEACON_RELAY: {
                     BeaconPacket beacon;
                     if (beacon.parse(rx.data, rx.length)) {
+                        bool isNew = false;
                         if (registryLock()) {
-                            registry.update(beacon, rx.rssi);
+                            isNew = registry.update(beacon, rx.rssi);
                             registryUnlock();
+                        }
+                        if (isNew && _lastNewBeaconMs == 0) {
+                            _lastNewBeaconMs = millis();
                         }
                         electionMgr.onBeacon(beacon);
 
@@ -772,13 +840,19 @@ static void taskLoRaGateway(void* param) {
             routeDiscoveryDone = true;
         }
 
-        // ── Start harvest after listen period ────────────────
+        // ── Start harvest (reactive or max-wait) ─────────────
         HarvestState curState = harvestLoop.state();
+
+        // Reactive: start 15s after first new beacon, OR after 180s max
+        bool reactiveReady = _lastNewBeaconMs > 0 &&
+                             (millis() - _lastNewBeaconMs >= HARVEST_REACTIVE_DELAY_MS);
+        bool maxWaitReady  = millis() - listenStartMs >= HARVEST_LISTEN_PERIOD_MS;
 
         if (curState == HARVEST_IDLE &&
             activeNodes > 0 &&
-            millis() - listenStartMs >= HARVEST_LISTEN_PERIOD_MS)
+            (reactiveReady || maxWaitReady))
         {
+            _lastNewBeaconMs = 0;  // Reset for next cycle
             if (!aodvRouter.isDiscoveryPending()) {
                 Serial.println("\n[AODV] Pre-harvest route discovery...");
                 aodvRouter.discoverAll();
@@ -831,7 +905,7 @@ static void taskHarvestGateway(void* param);
 static void taskLoRaLeafRelay(void* param) {
     uint32_t lastDiag      = 0;
     uint32_t lastBeaconMs  = 0;
-    uint32_t nextInterval  = BEACON_INTERVAL_MS;
+    uint32_t nextInterval  = 0;  // Fire first beacon immediately on boot/wake
 
     // Stored HARVEST_CMD for relay queue (persists across loop iterations)
     static HarvestCmdPacket pendingCmd;
@@ -927,8 +1001,11 @@ static void taskLoRaLeafRelay(void* param) {
 
                             if (electionMgr.isPromoted()) {
                                 if (registryLock()) {
-                                    registry.update(received, rx.rssi);
+                                    bool isNewPromoted = registry.update(received, rx.rssi);
                                     registryUnlock();
+                                    if (isNewPromoted && _lastNewBeaconMs == 0) {
+                                        _lastNewBeaconMs = millis();
+                                    }
                                 }
                             }
 
@@ -1063,11 +1140,17 @@ static void taskLoRaLeafRelay(void* param) {
 
             HarvestState curState = harvestLoop.state();
 
+            // Reactive: start 15s after first new beacon, OR after 180s max
+            bool promReactive = _lastNewBeaconMs > 0 &&
+                                (millis() - _lastNewBeaconMs >= HARVEST_REACTIVE_DELAY_MS);
+            bool promMaxWait  = millis() - promoteListenStartMs >= HARVEST_LISTEN_PERIOD_MS;
+
             if (curState == HARVEST_IDLE &&
                 !promoteHarvestTriggered &&
                 activeNodes > 0 &&
-                millis() - promoteListenStartMs >= HARVEST_LISTEN_PERIOD_MS)
+                (promReactive || promMaxWait))
             {
+                _lastNewBeaconMs = 0;  // Reset for next cycle
                 if (!aodvRouter.isDiscoveryPending()) {
                     aodvRouter.discoverAll();
                 }
@@ -1093,11 +1176,14 @@ static void taskLoRaLeafRelay(void* param) {
             deepSleepMgr.setCoapBusy(_relayCachedServing);
             deepSleepMgr.setHarvestInProgress(_relayBusy);
 
-            // Reset sleep timer if CoAP is actively serving blocks
+            // Reset sleep timer if CoAP is actively serving (blocks or requests)
             static uint32_t lastBlockCount = 0;
+            static uint32_t lastRequestCount = 0;
             uint32_t curBlockCount = coapServer.blocksSent();
-            if (curBlockCount != lastBlockCount) {
+            uint32_t curRequestCount = coapServer.requestCount();
+            if (curBlockCount != lastBlockCount || curRequestCount != lastRequestCount) {
                 lastBlockCount = curBlockCount;
+                lastRequestCount = curRequestCount;
                 deepSleepMgr.onActivity();
             }
 
@@ -1143,18 +1229,45 @@ static void taskLoRaLeafRelay(void* param) {
  */
 static void taskHarvestGateway(void* param) {
     for (;;) {
-        // Block until Core 0 triggers a harvest
+        // ── Check announce queue (leaf-initiated harvest) ─────
+        AnnounceMessage announce;
+        bool hasAnnounce = false;
+        while (xQueueReceive(xAnnounceQueue, &announce, 0) == pdTRUE) {
+            if (registryLock()) {
+                registry.updateFromAnnounce(announce.nodeId, announce.ip, announce.imageCount);
+                registryUnlock();
+            }
+            hasAnnounce = true;
+        }
+
+        if (hasAnnounce && harvestLoop.state() == HARVEST_IDLE) {
+            Serial.println("[Harvest Task] Announce-triggered harvest on Core 1");
+            harvestLoop.startCycle();
+            while (harvestLoop.state() != HARVEST_IDLE) {
+                harvestLoop.tick();
+                // Drain any new announces that arrive during harvest
+                AnnounceMessage late;
+                while (xQueueReceive(xAnnounceQueue, &late, 0) == pdTRUE) {
+                    if (registryLock()) {
+                        registry.updateFromAnnounce(late.nodeId, late.ip, late.imageCount);
+                        registryUnlock();
+                    }
+                }
+                vTaskDelay(pdMS_TO_TICKS(10));
+            }
+            Serial.println("[Harvest Task] Harvest cycle complete");
+            continue;
+        }
+
+        // ── Legacy: block on harvest command queue ────────────
         uint8_t cmd;
-        if (xQueueReceive(xHarvestCmdQueue, &cmd, portMAX_DELAY) == pdTRUE) {
+        if (xQueueReceive(xHarvestCmdQueue, &cmd, pdMS_TO_TICKS(500)) == pdTRUE) {
             Serial.println("[Harvest Task] Starting harvest cycle on Core 1");
             harvestLoop.startCycle();
-
-            // Run the state machine until it returns to IDLE
             while (harvestLoop.state() != HARVEST_IDLE) {
                 harvestLoop.tick();
                 vTaskDelay(pdMS_TO_TICKS(10));
             }
-
             Serial.println("[Harvest Task] Harvest cycle complete");
         }
     }

@@ -47,7 +47,7 @@ bool NodeRegistry::update(const BeaconPacket& beacon, float rssi) {
 
         log_d("%s: Updated node %s (RSSI=%.0f, images=%u)",
               TAG, node.ssid, node.rssi, node.imageCount);
-        return true;
+        return false;  // Existing refresh — not a new node
     }
 
     // ── New node: find a slot ────────────────────────────
@@ -72,6 +72,7 @@ bool NodeRegistry::update(const BeaconPacket& beacon, float rssi) {
     node.lastSeenMs = millis();
     node.harvested  = false;
     node.active     = true;
+    memset(node.announcedIP, 0, 4);  // No announce yet — beacon-discovered
     node.hopCount   = 1;       // Assume direct until AODV says otherwise
     node.routeKnown = false;
     memset(node.nextHopId, 0, 6);
@@ -83,6 +84,54 @@ bool NodeRegistry::update(const BeaconPacket& beacon, float rssi) {
           BeaconPacket::roleToString(node.nodeRole),
           node.imageCount, node.rssi);
 
+    return true;
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Update from Announce (leaf-initiated harvest)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+bool NodeRegistry::updateFromAnnounce(const uint8_t nodeId[6], const uint8_t ip[4],
+                                       uint8_t imageCount)
+{
+    int8_t idx = _findNode(nodeId);
+
+    if (idx >= 0) {
+        // Existing node: update IP and mark active
+        NodeEntry& node = _nodes[idx];
+        memcpy(node.announcedIP, ip, 4);
+        node.imageCount = imageCount;
+        node.lastSeenMs = millis();
+        node.active     = true;
+        node.harvested  = false;  // Reset for this cycle
+        log_i("%s: Announce update [%d] %s — IP=%u.%u.%u.%u, %u images",
+              TAG, idx, node.ssid, ip[0], ip[1], ip[2], ip[3], imageCount);
+        return false;  // Not new
+    }
+
+    // New node from announce
+    idx = _findEmptySlot();
+    if (idx < 0) {
+        idx = _findWeakestSlot();
+        if (idx < 0) return false;
+    }
+
+    NodeEntry& node = _nodes[idx];
+    memcpy(node.nodeId, nodeId, 6);
+    node.nodeRole   = NODE_ROLE_LEAF;
+    snprintf(node.ssid, sizeof(node.ssid), "ForestCam-%02X%02X", nodeId[4], nodeId[5]);
+    node.imageCount = imageCount;
+    node.rssi       = 0;
+    node.lastSeenMs = millis();
+    node.harvested  = false;
+    node.active     = true;
+    memcpy(node.announcedIP, ip, 4);
+    node.hopCount   = 1;
+    node.routeKnown = false;
+    memset(node.nextHopId, 0, 6);
+
+    log_i("%s: Announce NEW [%d] %s — IP=%u.%u.%u.%u, %u images",
+          TAG, idx, node.ssid, ip[0], ip[1], ip[2], ip[3], imageCount);
     return true;
 }
 

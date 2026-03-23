@@ -106,6 +106,41 @@ CoapClientError CoapClient::get(IPAddress serverIP, uint16_t serverPort,
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// POST — Simple Request with Payload
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CoapClientError CoapClient::post(IPAddress serverIP, uint16_t serverPort,
+                                  const char* uriPath,
+                                  const uint8_t* payload, size_t payloadLen)
+{
+    // Build a CON POST request reusing the GET builder for URI setup
+    CoapMessage request = _buildGetRequest(uriPath);
+    request.code = COAP_POST;  // Override GET → POST
+
+    // Attach payload
+    if (payload && payloadLen > 0 && payloadLen <= 1024) {
+        request.payload       = const_cast<uint8_t*>(payload);
+        request.payloadLength = payloadLen;
+    }
+
+    CoapMessage response;
+    uint32_t retries = 0;
+    CoapClientError err = _sendAndWait(request, serverIP, serverPort,
+                                        response, retries);
+    if (err != COAP_CLIENT_OK) return err;
+
+    // Accept 2.01 Created or 2.04 Changed as success
+    if (response.code != COAP_CREATED && response.code != COAP_CHANGED) {
+        log_w("%s: POST /%s — unexpected response code %u.%02u",
+              TAG, uriPath, response.code >> 5, response.code & 0x1F);
+        return COAP_CLIENT_SERVER_ERROR;
+    }
+
+    log_i("%s: POST /%s — OK (retries=%lu)", TAG, uriPath, retries);
+    return COAP_CLIENT_OK;
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Download Image — Block2 Transfer
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

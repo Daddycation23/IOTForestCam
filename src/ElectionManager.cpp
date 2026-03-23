@@ -4,6 +4,7 @@
  */
 
 #include "ElectionManager.h"
+#include "DeepSleepManager.h"  // rtcGatewayKnown
 #include "TaskConfig.h"
 
 static const char* TAG = "Election";
@@ -21,7 +22,7 @@ ElectionManager::ElectionManager(LoRaRadio& radio, NodeRegistry& registry,
     memset(_txBuf, 0, sizeof(_txBuf));
 }
 
-void ElectionManager::begin(const uint8_t mac[6], NodeRole originalRole) {
+void ElectionManager::begin(const uint8_t mac[6], NodeRole originalRole, bool gatewayKnownFromRtc) {
     memcpy(_mac, mac, 6);
     _originalRole = originalRole;
     _activeRole   = originalRole;
@@ -30,10 +31,22 @@ void ElectionManager::begin(const uint8_t mac[6], NodeRole originalRole) {
     _bootMs       = millis();
     uint32_t jitter = (mac[4] * 256 + mac[5]) % 5000;  // 0–5s based on MAC
     _graceEndMs   = _bootMs + ELECTION_STARTUP_GRACE_MS + jitter;
-    Serial.printf("[%s] Grace period jitter: %lu ms (ends at %lu ms)\n", TAG, jitter, _graceEndMs);
-    _lastGatewayBeaconMs = millis();
     _state        = ELECT_IDLE;
     _stateEnteredMs = millis();
+
+    // On timer wake, restore gateway knowledge from RTC to skip unnecessary election.
+    // The node will still detect gateway timeout (90s) if the gateway is truly gone.
+    // IMPORTANT: Don't reset _lastGatewayBeaconMs on RTC restore — the gateway may
+    // have died hours ago. Let the 90s timeout detect this naturally.
+    if (gatewayKnownFromRtc) {
+        _gatewayEverSeen = true;
+        _lastGatewayBeaconMs = millis();  // Give a short grace to hear a real beacon
+        Serial.printf("[%s] Gateway known from RTC — skipping election (grace jitter: %lu ms)\n",
+                      TAG, jitter);
+    } else {
+        _lastGatewayBeaconMs = millis();  // Fresh boot — normal timeout from now
+        Serial.printf("[%s] Grace period jitter: %lu ms (ends at %lu ms)\n", TAG, jitter, _graceEndMs);
+    }
 
     Serial.printf("[%s] begin: role=%s priority=0x%08lX electionId=%u\n",
                   TAG, BeaconPacket::roleToString(originalRole),
@@ -64,10 +77,14 @@ void ElectionManager::onBeacon(const BeaconPacket& beacon) {
     if (beacon.nodeRole == NODE_ROLE_GATEWAY) {
         _lastGatewayBeaconMs = millis();
         _gatewayEverSeen = true;
+        rtcGatewayKnown = true;
+        // Cache gateway SSID for leaf-initiated STA connection on next wake
+        strncpy(rtcGatewaySSID, beacon.ssid, 31);
+        rtcGatewaySSID[31] = '\0';
 
         if (_state == ELECT_ACTING_GATEWAY) {
             uint32_t otherPriority = ElectionPacket::macToPriority(beacon.nodeId);
-            if (otherPriority >= _myPriority) {
+            if (otherPriority > _myPriority) {
                 Serial.printf("[%s] Higher-priority gateway beacon — yielding\n", TAG);
                 _enterState(ELECT_RECLAIMED);
             } else {
@@ -95,7 +112,13 @@ void ElectionManager::onElectionPacket(const uint8_t* buf, uint8_t len) {
             Serial.printf("[%s] ELECTION from %s (pri=0x%08lX)\n",
                           TAG, idStr, senderPriority);
 
-            if (senderPriority < _myPriority) {
+            // Tiebreaker: if equal priority, lower MAC yields (higher MAC wins)
+            bool iAmHigher = (senderPriority < _myPriority) ||
+                             (senderPriority == _myPriority && memcmp(pkt.senderId, _mac, 6) < 0);
+            bool theyAreHigher = (senderPriority > _myPriority) ||
+                                 (senderPriority == _myPriority && memcmp(pkt.senderId, _mac, 6) > 0);
+
+            if (iAmHigher) {
                 Serial.printf("[%s] Suppressing lower-priority candidate\n", TAG);
                 _sendElectionPacket(PKT_TYPE_SUPPRESS, ELECTION_TX_REPEAT, ELECTION_TX_GAP_MS);
 
@@ -103,7 +126,7 @@ void ElectionManager::onElectionPacket(const uint8_t* buf, uint8_t len) {
                     _currentElectionId = pkt.electionId;
                     _enterState(ELECT_ELECTION_START);
                 }
-            } else if (senderPriority > _myPriority) {
+            } else if (theyAreHigher) {
                 if (_state == ELECT_WAITING || _state == ELECT_ELECTION_START) {
                     _enterState(ELECT_STOOD_DOWN);
                 }
@@ -115,7 +138,9 @@ void ElectionManager::onElectionPacket(const uint8_t* buf, uint8_t len) {
             Serial.printf("[%s] SUPPRESS from %s (pri=0x%08lX)\n",
                           TAG, idStr, senderPriority);
 
-            if (senderPriority > _myPriority) {
+            bool suppressorHigher = (senderPriority > _myPriority) ||
+                                    (senderPriority == _myPriority && memcmp(pkt.senderId, _mac, 6) > 0);
+            if (suppressorHigher) {
                 if (_state == ELECT_WAITING || _state == ELECT_ELECTION_START) {
                     _enterState(ELECT_STOOD_DOWN);
                 }
@@ -134,7 +159,8 @@ void ElectionManager::onElectionPacket(const uint8_t* buf, uint8_t len) {
                        _state == ELECT_WAITING || _state == ELECT_ELECTION_START) {
                 // Accept coordinator — including during grace period (IDLE)
                 _lastGatewayBeaconMs = millis();
-                _gatewayEverSeen = true;  // Coordinator IS the gateway now
+                _gatewayEverSeen = true;
+                rtcGatewayKnown = true;  // Persist for next timer wake
                 if (_state != ELECT_IDLE) {
                     Serial.printf("[%s] Coordinator announced — returning to IDLE\n", TAG);
                     _enterState(ELECT_IDLE);
@@ -152,7 +178,8 @@ void ElectionManager::onElectionPacket(const uint8_t* buf, uint8_t len) {
                 _enterState(ELECT_RECLAIMED);
             } else {
                 _lastGatewayBeaconMs = millis();
-                _gatewayEverSeen = true;  // Original gateway is back
+                _gatewayEverSeen = true;
+                rtcGatewayKnown = true;  // Original gateway is back
                 if (_state != ELECT_IDLE) {
                     _enterState(ELECT_IDLE);
                 }
@@ -175,6 +202,7 @@ void ElectionManager::_tickIdle() {
     // After grace period with no gateway seen, OR gateway beacon timed out
     if (!_gatewayEverSeen) {
         Serial.printf("[%s] Grace period expired, no gateway — starting election\n", TAG);
+        rtcGatewayKnown = false;  // Clear stale RTC state for next wake
         _electionId++;
         _currentElectionId = _electionId;
         _enterState(ELECT_ELECTION_START);
@@ -188,6 +216,7 @@ void ElectionManager::_tickIdle() {
         if (millis() - _lastGatewayBeaconMs >= ELECTION_GW_TIMEOUT_MS + stagger) {
             Serial.printf("[%s] Gateway timeout (stagger=%lu ms) — starting election\n",
                           TAG, stagger);
+            rtcGatewayKnown = false;  // Clear stale RTC state for next wake
             _electionId++;
             _currentElectionId = _electionId;
             _enterState(ELECT_ELECTION_START);

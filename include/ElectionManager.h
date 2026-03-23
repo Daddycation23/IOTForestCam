@@ -56,7 +56,7 @@ public:
     ElectionManager(LoRaRadio& radio, NodeRegistry& registry,
                     HarvestLoop& harvest, AodvRouter& aodv);
 
-    void begin(const uint8_t mac[6], NodeRole originalRole);
+    void begin(const uint8_t mac[6], NodeRole originalRole, bool gatewayKnownFromRtc = false);
     void tick();
     void onBeacon(const BeaconPacket& beacon);
     void onElectionPacket(const uint8_t* buf, uint8_t len);

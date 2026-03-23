@@ -22,6 +22,7 @@ If you have any question about the project, ask the user so that you can underst
 - Use test-driven development (TDD): write tests before or alongside implementation.
 - For each feature completed, update `docs/FEATURE_STATUS.md` and write a testing guide in `docs/`.
 - For each feature implemented, update the IOT Design Review Report (`ref/IOT Design Review Report.docx`) to track progress.
+- After implementing any feature or multi-step bugfix, automatically run a code review using `ref/code-checker.md` as the review guide. Use parallel sub-agents to cover: main logic, thread safety, networking/protocol, storage/sleep, and test coverage. Fix any Critical/High issues found before considering the task complete.
 
 ## Documentation
 

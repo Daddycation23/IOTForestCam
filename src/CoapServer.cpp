@@ -119,17 +119,24 @@ void CoapServer::loop() {
 void CoapServer::_handleRequest(CoapMessage& req,
                                  IPAddress remoteIP, uint16_t remotePort)
 {
-    // We only support GET
+    // Collect Uri-Path segments
+    const uint8_t* segs[4];
+    uint16_t       lens[4];
+    uint8_t segCount = req.getUriSegments(segs, lens, 4);
+
+    // Route: POST /announce (leaf-initiated harvest)
+    if (req.code == COAP_POST &&
+        segCount == 1 && lens[0] == 8 && memcmp(segs[0], "announce", 8) == 0) {
+        _handleAnnouncePost(req, remoteIP, remotePort);
+        return;
+    }
+
+    // All other endpoints require GET
     if (req.code != COAP_GET) {
         _sendError(req, COAP_METHOD_NOT_ALLOWED, "Only GET supported",
                    remoteIP, remotePort);
         return;
     }
-
-    // Collect Uri-Path segments
-    const uint8_t* segs[4];
-    uint16_t       lens[4];
-    uint8_t segCount = req.getUriSegments(segs, lens, 4);
 
     // Route: no path → info
     if (segCount == 0) {
@@ -414,4 +421,44 @@ void CoapServer::_sendError(CoapMessage& req, CoapCode code,
     log_w("%s: %s %s → %s:%u", TAG, codeBuf,
           diagnostic ? diagnostic : "",
           remoteIP.toString().c_str(), remotePort);
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// POST /announce  — Leaf-Initiated Harvest Announcement
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+void CoapServer::_handleAnnouncePost(CoapMessage& req,
+                                      IPAddress remoteIP, uint16_t remotePort)
+{
+    // Parse payload: binary format [6-byte MAC][1-byte imageCount]
+    if (!req.payload || req.payloadLength < 7) {
+        _sendError(req, COAP_BAD_REQUEST, "Need 7-byte payload: MAC(6)+imageCount(1)",
+                   remoteIP, remotePort);
+        return;
+    }
+
+    AnnounceMessage msg;
+    memcpy(msg.nodeId, req.payload, 6);
+    msg.imageCount = req.payload[6];
+    msg.ip[0] = remoteIP[0];
+    msg.ip[1] = remoteIP[1];
+    msg.ip[2] = remoteIP[2];
+    msg.ip[3] = remoteIP[3];
+
+    // Enqueue for the harvest task
+    if (xAnnounceQueue && xQueueSend(xAnnounceQueue, &msg, 0) == pdTRUE) {
+        Serial.printf("[CoAP] Announce from %u.%u.%u.%u — MAC=%02X:%02X:%02X:%02X:%02X:%02X, %u images\n",
+                      msg.ip[0], msg.ip[1], msg.ip[2], msg.ip[3],
+                      msg.nodeId[0], msg.nodeId[1], msg.nodeId[2],
+                      msg.nodeId[3], msg.nodeId[4], msg.nodeId[5],
+                      msg.imageCount);
+
+        CoapMessage resp = _makeResponse(req, COAP_CREATED);
+        _sendResponse(resp, remoteIP, remotePort);
+    } else {
+        _sendError(req, COAP_INTERNAL_ERROR, "Announce queue full",
+                   remoteIP, remotePort);
+    }
+
+    _requestCount++;
 }

@@ -72,8 +72,20 @@ void HarvestLoop::onHarvestAck(const HarvestAckPacket& ack) {
 void HarvestLoop::abortCycle() {
     if (_state == HARVEST_IDLE) return;
 
-    Serial.println("[Harvest] Aborting cycle — returning to IDLE");
-    _stats.nodesFailed++;
+    Serial.println("[Harvest] Aborting cycle — marking remaining nodes as failed");
+
+    // Mark all remaining unharvested nodes as failed
+    if (registryLock()) {
+        NodeEntry node;
+        while (_registry.getNextToHarvest(node)) {
+            _registry.markHarvested(node.nodeId);
+            _stats.nodesFailed++;
+        }
+        registryUnlock();
+    }
+
+    _relayHarvesting = false;
+    _coapClient.stop();
     _enterState(HARVEST_IDLE);
 }
 
@@ -160,11 +172,21 @@ void HarvestLoop::_doStart() {
 
     _stats.reset();
     _cycleStartMs = millis();
+
+    // Check if registry has any nodes before starting
+    uint8_t activeNodes = 0;
     if (registryLock()) {
+        activeNodes = _registry.activeCount();
         _registry.resetHarvestFlags();
         registryUnlock();
     }
     _relayHarvesting = false;
+
+    if (activeNodes == 0) {
+        Serial.printf("[%s] No active nodes in registry — skipping cycle\n", TAG);
+        _enterState(HARVEST_DONE);
+        return;
+    }
 
     // If AODV is available, do a route discovery first
     if (_aodvRouter) {
@@ -216,7 +238,26 @@ void HarvestLoop::_doDisconnect() {
     vTaskDelay(pdMS_TO_TICKS(500));
 
     log_d("%s: WiFi disconnected", TAG);
-    _enterState(HARVEST_WAKE_NODE);
+
+    // Peek at next node — if it sent a beacon recently, skip WAKE_NODE (saves 12s).
+    // The node is already awake, so we can connect directly.
+    bool skipWake = false;
+    if (!_relayHarvesting) {
+        NodeEntry peek;
+        if (registryLock()) {
+            if (_registry.getNextToHarvest(peek)) {
+                uint32_t age = millis() - peek.lastSeenMs;
+                if (age < 60000) {
+                    skipWake = true;
+                    Serial.printf("[%s] %s beacon %lus ago — skipping WAKE_NODE\n",
+                                  TAG, peek.ssid, age / 1000);
+                }
+            }
+            registryUnlock();
+        }
+    }
+
+    _enterState(skipWake ? HARVEST_CONNECT : HARVEST_WAKE_NODE);
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -262,6 +303,7 @@ void HarvestLoop::_doConnect() {
         Serial.println();
 
         if (WiFi.status() != WL_CONNECTED) {
+            WiFi.disconnect(true);  // Force cleanup of failed connection attempt
             Serial.printf("[ERROR] WiFi connect to relay %s FAILED\n", _relaySSID);
             if (registryLock()) {
                 _registry.markHarvested(_currentNode.nodeId);
@@ -316,6 +358,17 @@ void HarvestLoop::_doConnect() {
         return;
     }
 
+    // ── Announced node: already connected to gateway AP as STA ──
+    if (_currentNode.announcedIP[0] != 0) {
+        Serial.printf("\n--- Announced node %s (IP=%u.%u.%u.%u, images=%u) ---\n",
+                      _currentNode.ssid,
+                      _currentNode.announcedIP[0], _currentNode.announcedIP[1],
+                      _currentNode.announcedIP[2], _currentNode.announcedIP[3],
+                      _currentNode.imageCount);
+        _enterState(HARVEST_COAP_INIT);  // Skip WiFi — leaf is on our AP
+        return;
+    }
+
     // ── Direct connection to leaf ────────────────────────────
     Serial.printf("\n--- Connecting to %s (RSSI=%.0f, images=%u, hops=%u) ---\n",
                   _currentNode.ssid, _currentNode.rssi,
@@ -332,6 +385,7 @@ void HarvestLoop::_doConnect() {
     Serial.println();
 
     if (WiFi.status() != WL_CONNECTED) {
+        WiFi.disconnect(true);  // Force cleanup of failed connection attempt
         Serial.printf("[ERROR] WiFi connect to %s FAILED (timeout)\n", _currentNode.ssid);
         if (registryLock()) {
             _registry.markHarvested(_currentNode.nodeId);
@@ -379,15 +433,18 @@ void HarvestLoop::_doRelayCmd() {
         return;
     }
 
-    // Find the relay in the registry to get its SSID
+    // Find the relay in the registry to get its SSID (thread-safe)
     NodeEntry relayEntry;
     bool relayFound = false;
-    for (uint8_t i = 0; i < REGISTRY_MAX_NODES; i++) {
-        if (_registry.getNode(i, relayEntry) &&
-            memcmp(relayEntry.nodeId, route.nextHopId, 6) == 0) {
-            relayFound = true;
-            break;
+    if (registryLock()) {
+        for (uint8_t i = 0; i < REGISTRY_MAX_NODES; i++) {
+            if (_registry.getNode(i, relayEntry) &&
+                memcmp(relayEntry.nodeId, route.nextHopId, 6) == 0) {
+                relayFound = true;
+                break;
+            }
         }
+        registryUnlock();
     }
 
     if (!relayFound) {
@@ -510,7 +567,14 @@ void HarvestLoop::_doCoapInit() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 void HarvestLoop::_doDownload() {
-    IPAddress leafIP(192, 168, 4, 1);
+    // Use announced STA IP if available, otherwise default AP IP
+    IPAddress leafIP;
+    if (_currentNode.announcedIP[0] != 0) {
+        leafIP = IPAddress(_currentNode.announcedIP[0], _currentNode.announcedIP[1],
+                           _currentNode.announcedIP[2], _currentNode.announcedIP[3]);
+    } else {
+        leafIP = IPAddress(192, 168, 4, 1);
+    }
     uint16_t  leafPort = COAP_DEFAULT_PORT;
 
     // ── Fetch /info to get image count ──────────────────
@@ -606,6 +670,11 @@ void HarvestLoop::_doDownload() {
             _stats.totalImages++;
         } else {
             Serial.printf("    [ERROR] Download failed: %s\n\n", coapClientErrorStr(err));
+            // Remove partial/corrupt file from SD
+            if (savePath && SD.exists(savePath)) {
+                SD.remove(savePath);
+                Serial.printf("    Removed partial file: %s\n", savePath);
+            }
             failCount++;
         }
 
@@ -724,8 +793,10 @@ void HarvestLoop::_selfCopyImages() {
 void HarvestLoop::_doDone() {
     _stats.totalTimeMs = millis() - _cycleStartMs;
 
+    // Explicit resource cleanup with error logging
     _coapClient.stop();
     WiFi.disconnect(true);
+    _relayHarvesting = false;  // Ensure relay state is clean
 
     // ── Self-copy: gateway's own /images/ → /received/ ──────
     _selfCopyImages();

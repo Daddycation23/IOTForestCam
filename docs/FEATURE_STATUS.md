@@ -136,6 +136,35 @@
 - **Bugfix — COORDINATOR Ignored During Grace Period:** `onElectionPacket()` COORDINATOR handler only processed states `STOOD_DOWN/WAITING/ELECTION_START`, silently ignoring COORDINATOR received during `ELECT_IDLE` (grace period). This caused nodes to think no gateway existed and start unnecessary elections. Fix: added `ELECT_IDLE` to the state check — sets `_gatewayEverSeen` and `_lastGatewayBeaconMs` without state transition when already in IDLE.
 - **Bugfix — DIO1 Deep Sleep Wake Failure:** LoRa DIO1 ext1 wakeup doesn't work on LILYGO T3-S3 V1.2 despite holding RXEN/TXEN/CS GPIOs. The SX1280's receive path loses power or state during ESP32-S3 deep sleep (hardware limitation). Fix: switched to **timer-based wake** (`esp_sleep_enable_timer_wakeup`, 180s) as primary wake source. DIO1 ext1 kept as secondary. Leaves wake on timer, start WiFi AP + CoAP server, gateway connects during the 120s awake window.
 
+### 14. Beacon-Reactive Harvest
+- **Branch:** `feature/reactive-harvest`
+- **Description:** Fixes harvest timing misalignment with timer-based deep sleep. Previously, the gateway waited a fixed 180s before harvesting — leaves were often asleep. Now the gateway reacts to leaf beacons and harvests within 15s of detecting an awake node.
+- **Key Changes:**
+  1. **Persist gateway knowledge in RTC:** `rtcGatewayKnown` survives deep sleep. On timer wake, `ElectionManager::begin()` restores `_gatewayEverSeen` — eliminates 15-30s election thrashing per wake cycle.
+  2. **Immediate beacon on boot/wake:** `nextInterval = 0` fires first beacon immediately instead of waiting 30s. Gateway detects leaf within seconds of wake.
+  3. **Beacon-reactive harvest trigger:** Gateway starts harvest 15s after first new beacon (`HARVEST_REACTIVE_DELAY_MS`), instead of waiting the full 180s. 180s remains as a max fallback. Applies to both boot-gateway and promoted-gateway paths.
+  4. **Skip WAKE_NODE for awake nodes:** `_doDisconnect()` peeks at next node's `lastSeenMs` — if beacon < 60s ago, skips the 12s WAKE_NODE wait and goes directly to CONNECT.
+  5. **Fix registry.update() return value:** Previously returned `true` for both new nodes and existing refreshes, causing the reactive trigger to fire every ~90s (leaves never slept). Now returns `false` for refreshes — reactive trigger only fires on genuinely new/reappeared nodes.
+  6. **Reset rtcGatewayKnown on gateway timeout:** If the gateway disappears, `rtcGatewayKnown` is cleared so the next wake cycle runs a proper election instead of waiting 90s for a beacon that won't come.
+- **Key Files:** `include/DeepSleepManager.h`, `src/DeepSleepManager.cpp`, `include/ElectionManager.h`, `src/ElectionManager.cpp`, `src/HarvestLoop.cpp`, `src/main.cpp`, `src/NodeRegistry.cpp`
+- **Tests:** 91 tests across 8 suites — all passing
+
+### 15. Leaf-Initiated Announce Harvest
+- **Branch:** `feature/reactive-harvest`
+- **Description:** Reverses the harvest flow so leaves initiate image transfer. On timer wake, leaves connect to the gateway's WiFi AP as STA, send a CoAP POST /announce with MAC + image count, and wait for the gateway to download their images. The gateway stays on its own AP and downloads from the leaf's STA IP. This eliminates all timing alignment issues with deep sleep.
+- **Key Changes:**
+  1. **RTC gateway SSID persistence:** `rtcGatewaySSID[32]` cached from gateway beacons, used to connect as STA on timer wake.
+  2. **Leaf STA mode on timer wake:** `initLeafRelay()` detects timer wake + known gateway → `WiFi.mode(WIFI_STA)` → `WiFi.begin(rtcGatewaySSID)`. Falls back to AP mode if connect fails.
+  3. **CoapClient::post() method:** New POST method for sending the 7-byte announce payload (6-byte MAC + 1-byte imageCount).
+  4. **CoAP POST /announce endpoint:** Gateway's CoapServer accepts POST /announce, extracts sender IP from UDP, enqueues `AnnounceMessage` to `xAnnounceQueue`.
+  5. **Announce queue + harvest trigger:** `taskHarvestGateway` polls `xAnnounceQueue`, updates registry with announced IP via `updateFromAnnounce()`, starts harvest immediately.
+  6. **HarvestLoop announced IP:** `_doConnect()` skips WiFi connect for announced nodes (already on same AP). `_doDownload()` uses `announcedIP` instead of hardcoded `192.168.4.1`.
+  7. **requestCount polling:** Deep sleep timer reset by both `blocksSent()` and `requestCount()` changes (supports gateway keep-alive GET /info).
+- **Cold boot flow:** First cycle uses legacy AP mode (gateway-initiated). Gateway SSID cached to RTC. Subsequent wakes use leaf-initiated announce.
+- **Concurrent leaves:** ESP32-S3 AP supports 4+ STA clients. Multiple leaves connect and announce simultaneously. Gateway downloads sequentially. Leaves kept alive by blocksSent/requestCount polling.
+- **Key Files:** `include/CoapClient.h`, `src/CoapClient.cpp`, `include/CoapServer.h`, `src/CoapServer.cpp`, `include/TaskConfig.h`, `src/TaskConfig.cpp`, `include/NodeRegistry.h`, `src/NodeRegistry.cpp`, `include/DeepSleepManager.h`, `src/DeepSleepManager.cpp`, `src/ElectionManager.cpp`, `src/HarvestLoop.cpp`, `src/main.cpp`
+- **Tests:** 91 tests across 8 suites — all passing
+
 ---
 
 ## In Progress

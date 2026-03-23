@@ -19,6 +19,7 @@ SemaphoreHandle_t  xRegistryMutex   = nullptr;
 QueueHandle_t      xLoRaTxQueue     = nullptr;
 QueueHandle_t      xHarvestCmdQueue = nullptr;
 QueueHandle_t      xRelayHarvestQueue = nullptr;
+QueueHandle_t      xAnnounceQueue     = nullptr;
 EventGroupHandle_t xHarvestEvents   = nullptr;
 
 TaskHandle_t hTaskLoRa        = nullptr;
@@ -36,6 +37,7 @@ void initRTOS() {
     xLoRaTxQueue       = xQueueCreate(LORA_TX_QUEUE_SIZE, sizeof(LoRaTxRequest));
     xHarvestCmdQueue   = xQueueCreate(HARVEST_CMD_QUEUE_SIZE, sizeof(uint8_t));
     xRelayHarvestQueue = xQueueCreate(RELAY_HARVEST_QUEUE_SIZE, sizeof(HarvestCmdPacket));
+    xAnnounceQueue     = xQueueCreate(ANNOUNCE_QUEUE_SIZE, sizeof(AnnounceMessage));
     xHarvestEvents     = xEventGroupCreate();
 
     configASSERT(xLoRaMutex);
@@ -43,6 +45,7 @@ void initRTOS() {
     configASSERT(xLoRaTxQueue);
     configASSERT(xHarvestCmdQueue);
     configASSERT(xRelayHarvestQueue);
+    configASSERT(xAnnounceQueue);
     configASSERT(xHarvestEvents);
 
     Serial.println("[RTOS] All primitives initialized");

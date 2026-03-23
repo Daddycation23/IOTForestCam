@@ -22,6 +22,7 @@
 #include <WiFiUdp.h>
 #include "CoapMessage.h"
 #include "StorageReader.h"
+#include "TaskConfig.h"  // AnnounceMessage
 
 class CoapServer {
 public:
@@ -86,6 +87,9 @@ private:
 
     void _handleWellKnownCore(CoapMessage& req,
                               IPAddress remoteIP, uint16_t remotePort);
+
+    void _handleAnnouncePost(CoapMessage& req,
+                             IPAddress remoteIP, uint16_t remotePort);
 
     // ── Response helpers ─────────────────────────────────────
 
