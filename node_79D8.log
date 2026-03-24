@@ -1,0 +1,135 @@
+--- COM6 connected at 0s ---
+[RoleConfig] Auto-negotiation mode — starting as LEAF
+
+[Role] Booting as: LEAF (auto-negotiate)
+
+[RTOS] All primitives initialized
+
+====================================
+  IOT Forest Cam — Leaf (LoRa+CoAP)
+  FreeRTOS + AODV Routing Enabled
+====================================
+
+[SD] Non-clean reset — power-cycling SD CS pin
+[  8022][I][StorageReader.cpp:94] begin(): StorageReader: SD mounted — Type: SDHC, Size: 60906 MB
+[  9240][I][StorageReader.cpp:104] begin(): StorageReader: Found 2 image(s) in /images
+[OK] SD card: 2 image(s) found
+  [0] /images/Screenshot 2025-11-10 104218.jpeg — 22079 bytes (22 blocks)
+  [1] /images/Screenshot 2025-11-10 104337.jpeg — 22901 bytes (23 blocks)
+[OK] WiFi AP: ForestCam-79D8 (pass: forestcam123)
+[OK] IP: 192.168.4.1
+[  9776][I][CoapServer.cpp:65] begin(): CoapServer: Listening on UDP port 5683
+[OK] CoAP server on port 5683
+
+Resources:
+  GET /info             — Image catalogue (JSON)
+  GET /image/{n}        — Image via Block2 transfer
+  GET /checksum/{n}     — Fletcher-16 checksum (JSON)
+  GET /.well-known/core — Resource discovery
+
+[  9809][I][LoRaRadio.cpp:51] begin(): LoRaRadio: Pin check: DIO1(GPIO9)=0, BUSY(GPIO36)=1, CS(GPIO7)=1
+[  9818][I][LoRaRadio.cpp:55] begin(): LoRaRadio: Init attempt 1/3
+[  9877][I][LoRaRadio.cpp:71] begin(): LoRaRadio: SX1280 BUSY released after 2 ms
+[  9895][I][LoRaRadio.cpp:79] begin(): LoRaRadio: Initializing SX1280 at 2400.0 MHz, SF9, BW812.5 kHz...
+[  9909][I][LoRaRadio.cpp:91] begin(): LoRaRadio: SX1280 ready (attempt 1)
+[OK] LoRa beacon TX + RX enabled (AODV routing)
+[AODV] Initialized, nodeId=DC:54:75:E4:79:D8, seqNum=1
+[Election] Grace period jitter: 1192 ms (ends at 26109 ms)
+[Election] begin: role=LEAF priority=0xD879E475 electionId=9917
+[RTOS] Tasks created — Core 0: LoRa, Core 1: CoAP Server
+[LoRa] Beacon TX (15 bytes) — ForestCam-79D8, 2 images
+[Election] Grace period expired, no gateway — starting election
+[Election] -> ELECTION_START
+[Election] Backoff: 506 ms
+[Election] -> WAITING
+[Election] COORDINATOR from DC:54:75:E4:80:E4 (pri=0xE480E475)
+[Election] Gateway SSID cached: ForestCam-GW-80E4
+[Election] Coordinator announced — returning to IDLE
+[Election] -> IDLE
+[Election] COORDINATOR from DC:54:75:E4:80:E4 (pri=0xE480E475)
+[Election] Gateway SSID cached: ForestCam-GW-80E4
+[Election] Coordinator noted — gateway exists
+[Election] COORDINATOR from DC:54:75:E4:80:E4 (pri=0xE480E475)
+[Election] Gateway SSID cached: ForestCam-GW-80E4
+[Election] Coordinator noted — gateway exists
+[LoRa] Beacon TX (15 bytes) — ForestCam-79D8, 2 images
+[LoRa] Beacon TX (15 bytes) — ForestCam-79D8, 2 images
+[LoRa] Beacon TX (15 bytes) — ForestCam-79D8, 2 images
+[LoRa] Beacon TX (15 bytes) — ForestCam-79D8, 2 images
+[Election] Gateway timeout (stagger=2003 ms) — starting election
+[Election] -> ELECTION_START
+[Election] Backoff: 506 ms
+[Election] -> WAITING
+[Election] COORDINATOR from DC:54:75:E4:80:E4 (pri=0xE480E475)
+[Election] Gateway SSID cached: ForestCam-GW-80E4
+[Election] Coordinator announced — returning to IDLE
+[Election] -> IDLE
+
+[Deeng deep sleep
+[DeepSleep] Boot count: 1
+[146395][I][DeepSleepManager.cpp:64] saveState(): DeepSleep: State saved — role=1, ssid=ForestCam-79D8, imgIdx=-1, bootCount=1
+[146407][E][WiFiUdp.cp[p1:4262410]7 ]p[aIr]s[eCPoaacpkSeetr(v)e:r .ccopupl:d not re7c9e]i vset odpa(t)a::  C1o2a8pS
+erver: Server stopped
+[146424][I][DeepSleepManager.cpp:90] prepareRadioForSleep(): DeepSleep: Radio in continuous RX for DIO1 wakeup
+[146434][I][DeepSleepManager.cpp:112] prepareRadioForSleep(): DeepSleep: GPIO 21/10/7/5/6/3 held for deep sleep (PA RX + SPI stable)
+[146446][I][DeepSleepManager.cpp:117] enterSleep(): DeepSleep: Entering deep sleep — timer 180s, boot #1
+--- COM6 disconnected at 143s ---
+--- COM6 connected at 325s ---
+[AODV] RREQ rx: orig=DC:54:75:E4:80:E4 dest=FF:FF:FF:FF:FF:FF hops=1 prevHop=DC:54:75:E4:80:E4
+[AODV] I am the destination — sending RREP (seqNum=2)
+[LoRa] Beacon TX (15 bytes) — ForestCam-79D8, 2 images
+[Election] ELECTION from DC:54:75:E4:85:60 (pri=0x6085E475)
+[Election] Suppressing lower-priority candidate
+[Election] COORDINATOR from DC:54:75:E4:80:E4 (pri=0xE480E475)
+[Election] Gateway SSID cached: ForestCam-GW-80E4
+[Election] Coordinator noted — gateway exists
+[Election] ELECTION from DC:54:75:E4:85:60 (pri=0x6085E475)
+[Election] Suppressing lower-priority candidate
+[Election] COORDINATOR from DC:54:75:E4:80:E4 (pri=0xE480E475)
+[Election] Gateway SSID cached: ForestCam-GW-80E4
+[Election] Coordinator noted — gateway exists
+[Election] COORDINATOR from DC:54:75:E4:80:E4 (pri=0xE480E475)
+[Election] Gateway SSID cached: ForestCam-GW-80E4
+[Election] Coordinator noted — gateway exists
+[ 60927][I][StorageReader.cpp:185] openImage(): StorageReader: Opened /images/Screenshot 2025-11-10 104218.jpeg (22079 bytes, 22 blocks)
+[LoRa] Beacon TX (15 bytes) — ForestCam-79D8, 2 images
+[ 68917][I][StorageReader.cpp:185] openImage(): StorageReader: Opened /images/Screenshot 2025-11-10 104337.jpeg (22901 bytes, 23 blocks)
+[LoRa] Beacon TX (15 bytes) — ForestCam-79D8, 2 images
+[LoRa] Beacon TX (15 bytes) — ForestCam-79D8, 2 images
+[Election] Gateway timeout (stagger=2003 ms) — starting election
+[Election] -> ELECTION_START
+[Election] Backoff: 506 ms
+[Election] -> WAITING
+[Election] COORDINATOR from DC:54:75:E4:80:E4 (pri=0xE480E475)
+[Election] Gateway SSID cached: ForestCam-GW-80E4
+[Election] Coordinator announced — returning to IDLE
+[Election] -> IDLE
+[Election] COORDINATOR from DC:54:75:E4:80:E4 (pri=0xE480E475)
+[Election] Gateway SSID cached: ForestCam-GW-80E4
+[Election] Coordinator noted — gateway exists
+[Election] COORDINATOR from DC:54:75:E4:80:E4 (pri=0xE480E475)
+[Election] Gateway SSID cached: ForestCam-GW-80E4
+[Election] Coordinator noted — gateway exists
+[AODV] Route to DC:54:75:E4:80:E4 expired
+[LoRa] Beacon TX (15 bytes) — ForestCam-79D8, 2 images
+[LoRa] Beacon TX (15 bytes) — ForestCam-79D8, 2 images
+[LoRa] Beacon TX (15 bytes) — ForestCam-79D8, 2 images
+[LoRa] Beacon TX (15 bytes) — ForestCam-79D8, 2 images
+[Election] Gateway timeout (stagger=2003 ms) — starting election
+[Election] -> ELECTION_START
+[Election] Backoff: 506 ms
+[Election] -> WAITING
+[Election] COORDINATOR from DC:54:75:E4:80:E4 (pri=0xE480E475)
+[Election] Gateway SSID cached: ForestCam-GW-80E4
+[Election] Coordinator announced — returning to IDLE
+[Election] -> IDLE
+
+[DeepSleep] Active timeout expired — entering deep sleep
+[DeepSleep] Boot count: 2
+[247720][I][DeepSleepManager.cpp:64] saveState(): DeepSleep: State saved — role=1, ssid=ForestCam-79D8, imgIdx=-1, bootCount=2
+[247732][I][CoapServer.cpp:79] stop(): CoapServer: Server stopped
+[247741][W][WiFiGeneric.cpp:1062] _eventCallback(): Reason: 8 - ASSOC_LEAVE
+[247746][I][DeepSleepManager.cpp:90] prepareRadioForSleep(): DeepSleep: Radio in continuous RX for DIO1 wakeup
+[247758][I][DeepSleepManager.cpp:112] prepareRadioForSleep(): DeepSleep: GPIO 21/10/7/5/6/3 held for deep sleep (PA RX + SPI stable)
+[247769][I][DeepSleepManager.cpp:117] enterSleep(): DeepSleep: Entering deep sleep — timer 180s, boot #2
+--- COM6 disconnected at 569s ---
