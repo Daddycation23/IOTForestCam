@@ -1,21 +1,45 @@
 --- COM14 connected at 0s ---
-[Election] ELECTION from DC:54:75:E4:79:[Election] Suppressing lower-priority candidate
-[Election] Sending COORDINATOR (we're already gateway)
+ATOR from DC:54:75:E4:85:60 (pri=0x6085E475)
+[Election] Gateway SSID cached: ForestCam-GW-8560
+[Election] COORDINATOR from DC:54:75:E4:85:60 (pri=0x6085E475)
+[Election] Gateway SSID cached: ForestCam-GW-8560
+[Election] Coordinator noted — gateway exists
+[Election] ELECTION from DC:54:[Election] Suppressing lower-priority candidate
+[Election] ELECTION from DC:54:75:E4:79:D8 (pri=0xD879E475)
+[Election] Suppressing lower-priority candidate
+[Election] COORDINATOR from DC:54:75:E4:79:D8 (pri=0xD879E475)
+[Election] Gateway SSID cached: ForestCam-GW-79D8
+[Election] Coordinator noted — gateway exists
+[LoRa] Beacon TX (15 bytes) — ForestCam-80E4, 3 images
+[LoRa] Beacon TX (15 bytes) — ForestCam-80E4, 3 images
+[LoRa] Beacon TX (15 bytes) — ForestCam-80E4, 3 images
+[Election] Gateway timeout (stagger=2659 ms) — starting election
+[Election] -> ELECTION_START
+[Election] Backoff: 2147 ms
+[Election] -> WAITING
+[Election] Backoff expired — broadcasting COORDINATOR
+[Election] -> PROMOTED
+
+[Election] ╔═══�═════════════════════════╗
+[Election] ║  PROMOTED TO ACTING GATEWAY      ║
+[Election] ╚══════════════════════════════════╝
+
+[Registry] Reset — all slots cleared
+[Election] -> ACTING_GATEWAY
+[Promoted GW] WiFi AP switched to: ForestCam-GW-80E4
+[152148][E][WiFiUdp.cpp:221] parsePacket(): could not receive data: 128
+[152149][I][CoapServer.cpp:65] begin(): CoapServer: Listening on UDP port 5683
+[Promoted GW] CoAP server started on port 5683
+lity enabled, listening...
 [LoRa] Beacon TX (15 bytes) — ForestCam-GW-80E4, 3 images
-[Election] ELECTION from DC:54:75:E4:79:D8 (pri=0xD87[Election] Suppressing lower-priority candidate
-[Election] Sending COORDINATOR (we're already gateway)
 [LoRa] Beacon TX (15 bytes) — ForestCam-GW-80E4, 3 images
 [LoRa] Beacon TX (15 bytes) — ForestCam-GW-80E4, 3 images
 [LoRa] Beacon TX (15 bytes) — ForestCam-GW-80E4, 3 images
 [LoRa] Beacon TX (15 bytes) — ForestCam-GW-80E4, 3 images
-[Election] ELECTION from DC:54:75:E4:79:D8 (pri=0xD8[Election] Suppressing lower-priority candidate
-[Election] Sending COORDINATOR (we're already gateway)
 [LoRa] Beacon TX (15 bytes) — ForestCam-GW-80E4, 3 images
 [LoRa] Beacon TX (15 bytes) — ForestCam-GW-80E4, 3 images
-[LoRa] Beacon TX (15 bytes) — ForestCam-GW-80E4, 3 images
-[LoRa] Beacon TX (15 bytes) — ForestCam-GW-80E4, 3 images
-[CoAP] Announce from 192.168.4.2 — MAC=DC:54:75:E4:85:60, 2 images
-[303489][I][NodeRegistry.cpp:134] updateFromAnnounce(): NodeRegistry: Announce NEW [0] ForestCam-8560 — IP=192.168.4.2, 2 images
+[CoAP] Announce from 192.168.4.2 — MAC=DC:54:75:E4:79:D8, 2 images
+[333163][I][NodeRegistry.cpp:134] updateFromAnnounce(): NodeRegistry: Announce NEW [0] ForestCam-79D8 — IP=192.168.4.2, 2 images
 [Harvest Task] Announce-triggered harvest on Core 1
 
 ╔══════════════════════════════════════╗
@@ -27,62 +51,100 @@
 [AODV] RREQ broadcast for FF:FF:FF:FF:FF:FF (rreqId=2, seqNum=3)
 
 [Harvest] Starting cycle — 1 node(s)
-[AODV] RREQ rx: orig=00:00:00:39:C2:00 dest=FF:FF:3F:00:00:00 hops=1 prevHop=71:CB:3F:70:72:CB
-[AODV] RREQ broadcast for FF:FF:FF:FF:FF:FF (rreqId=2, seqNum=3)
-[AODV] RREQ rebroadcast (hops=1)
+[AODV] RREQ rx: orig=00:00:00:71:C2:00 dest=FF:FF:FF:FF:FF:FF hops=1 prevHop=71:CB:3F:70:72:CB
+[AODV] I am the destination — sending RREP (seqNum=4097)
+[AODV] RREQ broadcast for FF:FF:FF:FF:FF:FF (rreqId=2, seqNum=4097)
+[CoAP] Announce from 192.168.4.3 — MAC=DC:54:75:E4:85:60, 2 images
+[336249][I][NodeRegistry.cpp:134] updateFromAnnounce(): NodeRegistry: Announce NEW [1] ForestCam-8560 — IP=192.168.4.3, 2 images
 [AODV] Route discovery TIMEOUT for FF:FF:FF:FF:FF:FF
 [Harvest] Route discovery period complete (1 routes found)
 
---- Announced node ForestCam-8560 (IP=192.168.4.2, images=2) ---
-[309535][I][CoapClient.cpp:60] begin(): CoapClient: Ready (local port 0)
+--- Announced node ForestCam-79D8 (IP=192.168.4.2, images=2) ---
+[339211][I][CoapClient.cpp:60] begin(): CoapClient: Ready (local port 0)
+=== GET /info from ForestCam-79D8 ===
+Response: {"count":2,"block_size":1024,"images":[{"id":0,"name":"/images/Screenshot 2025-11-10 104218.jpeg","size":22079,"blocks":22},{"id":1,"name":"/images/Screenshot 2025-11-10 104337.jpeg","size":22901,"blocks":23}]}
+Downloading 2 image(s)...
+
+[346689][I][CoapClient.cpp:418] downloadImagePipelined(): CoapCl  === Download /image/0 ===
+ient: Pipelined download — image/0, window=3
+[346887][I][CoapClient.cpp:522] downloadImagePipelined(): CoapClient: Image 0 — 22079 bytes, ~22 blocks
+  Block 0 — 1024 bytes (4.5%)
+  Block 21 — 22079 bytes (98.0%)
+[347942][I][CoapClient.cpp:573] downloadImagePipelined(): CoapClient: Pipelined download complete — 22079 bytes, 22 blocks, 8591 ms, 2.5 KB/s
+    Bytes: 22079 | Blocks: 22 | Time: 8591 ms | Speed: 2.5 KB/s
+    Saved: /received/node_79D8_boot001_000339s_img_000.jpg
+[348179][I][CoapClient.cpp:612] verifyChecksum(): CoapClient: Checksum verify — local=12989, server=12989 → PASS
+    Checksum: 0x32BD — PASS
+
+  === Download /image/1 ===
+[355572][I][CoapClient.cpp:418] downloadImagePipelined(): CoapClient: Pipelined download — image/1, window=3
+[355903][I][CoapClient.cpp:522] downloadImagePipelined(): CoapClient: Image 1 — 22901 bytes, ~23 blocks
+  Block 0 — 1024 bytes (4.3%)
+  Block 22 — 22901 bytes (97.2%)
+[357397][I][CoapClient.cpp:573] downloadImagePipelined(): CoapClient: Pipelined download complete — 22901 bytes, 23 blocks, 9207 ms, 2.4 KB/s
+    Bytes: 22901 | Blocks: 23 | Time: 9207 ms | Speed: 2.4 KB/s
+    Saved: /received/node_79D8_boot001_000348s_img_001.jpg
+[357573][I][CoapClient.cpp:612] verifyChecksum(): CoapClient: Checksum verify — local=46012, server=46012 → PASS
+    Checksum: 0xB3BC — PASS
+
+  Node ForestCam-79D8: 2/2 images OK
+
+[357604][I][CoapClient.cpp:72] stop(): CoapClient: Stopped
+
+--- Announced node ForestCam-8560 (IP=192.168.4.3, images=2) ---
+[357630][I][CoapClient.cpp:60] begin(): CoapClient: Ready (local port 0)
 === GET /info from ForestCam-8560 ===
 Response: {"count":2,"block_size":1024,"images":[{"id":0,"name":"/images/062625_18b.jpeg","size":84919,"blocks":83},{"id":1,"name":"/images/1920x1080-aesthetic-glrfk0ntspz3tvxg.jpeg","size":27822,"blocks":28}]}
 Downloading 2 image(s)...
 
   === Download /image/0 ===
-[315842][I][CoapClient.cpp:418] downloadImagePipelined(): CoapClient: Pipelined download — image/0, window=3
-[316083][I][CoapClient.cpp:522] downloadImagePipelined(): CoapClient: Image 0 — 84919 bytes, ~83 blocks
+[LoRa] Beacon TX (15 bytes) — ForestCam-GW-80E4, 3 images
+[365159][I][CoapClient.cpp:418] downloadImagePipelined(): CoapClient: Pipelined download — image/0, window=3
+[365535][I][CoapClient.cpp:522] downloadImagePipelined(): CoapClient: Image 0 — 84919 bytes, ~83 blocks
   Block 0 — 1024 bytes (1.2%)
   Block 50 — 52224 bytes (61.4%)
   Block 82 — 84919 bytes (99.9%)
-[321248][I][CoapClient.cpp:573] downloadImagePipelined(): CoapClient: Pipelined download complete — 84919 bytes, 83 blocks, 11452 ms, 7.2 KB/s
-    Bytes: 84919 | Blocks: 83 | Time: 11452 ms | Speed: 7.2 KB/s
-    Saved: /received/node_8560_boot001_000309s_img_000.jpg
-[321436][I][CoapClient.cpp:612] verifyChecksum(): CoapClient: Checksum verify — local=6426, server=6426 → PASS
+[370720][I][CoapClient.cpp:573] downloadImagePipelined(): CoapClient: Pipelined download complete — 84919 bytes, 83 blocks, 12917 ms, 6.4 KB/s
+    Bytes: 84919 | Blocks: 83 | Time: 12917 ms | Speed: 6.4 KB/s
+    Saved: /received/node_8560_boot001_000357s_img_000.jpg
+[370890][I][CoapClient.cpp:612] verifyChecksum(): CoapClient: Checksum verify — local=6426, server=6426 → PASS
     Checksum: 0x191A — PASS
 
   === Download /image/1 ===
-[327503][I][CoapClient.cpp:418] downloadImagePipelined(): CoapClient: Pipelined download — image/1, window=3
-[327791][I][CoapClient.cpp:522] downloadImagePipelined(): CoapClient: Image 1 — 27822 bytes, ~28 blocks
+[378270][I][CoapClient.cpp:418] downloadImagePipelined(): CoapClient: Pipelined download — image/1, window=3
+[378668][I][CoapClient.cpp:522] downloadImagePipelined(): CoapClient: Image 1 — 27822 bytes, ~28 blocks
   Block 0 — 1024 bytes (3.6%)
-[LoRa] Beacon TX (15 bytes) — ForestCam-GW-80E4, 3 images
   Block 27 — 27822 bytes (97.0%)
-[329436][I][CoapClient.cpp:573] downloadImagePipelined(): CoapClient: Pipelined download complete — 27822 bytes, 28 blocks, 7990 ms, 3.4 KB/s
-    Bytes: 27822 | Blocks: 28 | Time: 7990 ms | Speed: 3.4 KB/s
-    Saved: /received/node_8560_boot001_000321s_img_001.jpg
-[329634][I][CoapClient.cpp:612] verifyChecksum(): CoapClient: Checksum verify — local=14843, server=14843 → PASS
+[380470][I][CoapClient.cpp:573] downloadImagePipelined(): CoapClient: Pipelined download complete — 27822 bytes, 28 blocks, 9570 ms, 2.8 KB/s
+    Bytes: 27822 | Blocks: 28 | Time: 9570 ms | Speed: 2.8 KB/s
+    Saved: /received/node_8560_boot001_000370s_img_001.jpg
+[380520][I][CoapClient.cpp:612] verifyChecksum(): CoapClient: Checksum verify — local=14843, server=14843 → PASS
     Checksum: 0x39FB — PASS
 
   Node ForestCam-8560: 2/2 images OK
 
-[329665][I][CoapClient.cpp:72] stop(): CoapClient: Stopped
-[329680][I][HarvestLoop.cpp:300] _doConnect(): Harvest: No more nodes to harvest
-[Harvest] Self-copy: vga.jpeg -> /received/node_SELF_boot001_000329s_img_000.jpg (10128 bytes)
-[Harvest] Self-copy: 1080p.jpeg -> /received/node_SELF_boot001_000334s_img_001.jpg (13248 bytes)
+[380551][I][CoapClient.cpp:72] stop(): CoapClient: Stopped
+[380566][I][HarvestLoop.cpp:303] _doConnect(): Harvest: No more nodes to harvest
+[Harvest] Self-copy: vga.jpeg -> /received/node_SELF_boot001_000380s_img_000.jpg (10128 bytes)
 [LoRa] Beacon TX (15 bytes) — ForestCam-GW-80E4, 3 images
-[CoAP] Announce from 192.168.4.3 — MAC=DC:54:75:E4:79:D8, 2 images
-[Harvest] Self-copy: 4k.jpg -> /received/node_SELF_boot001_000340s_img_002.jpg (967851 bytes)
+[Harvest] Self-copy: 1080p.jpeg -> /received/node_SELF_boot001_000386s_img_001.jpg (13248 bytes)
+[LoRa] Beacon TX (15 bytes) — ForestCam-GW-80E4, 3 images
+[Election] ELECTION fromxD879E475)
+[Election] Suppressing lower-priority candidate
+[Election] Sending COORD] ELECTION from DC:54:75:E4:79:D8 (pri=0xD879E475)
+[Election] Suppressing lower-priority candidate
+[Election] Sending COORDINATOR (we're already gateway)
+[Harvest] Self-copy: 4k.jpg -> /received/node_SELF_boot001_000393s_img_002.jpg (967851 bytes)
 [Harvest] Self-copy complete: 3 image(s) copied
 
 ╔══════════════════════════════════════╗
 ║     HARVEST CYCLE COMPLETE           ║
-║     Nodes: 1 attempted, 1 OK, 0 fail ║
-║     Images: 5 total                  ║
-║     Data:   1103968 bytes                  ║
-║     Time:   26196 ms                     ║
+║     Nodes: 2 attempted, 2 OK, 0 fail ║
+║     Images: 7 total                  ║
+║     Data:   1148948 bytes                  ║
+║     Time:   47408 ms                     ║
 ╚══════════════════════════════════════╝
 
-[387999][I][NodeRegistry.cpp:134] updateFromAnnounce(): NodeRegistry: Announce NEW [1] ForestCam-79D8 — IP=192.168.4.3, 2 images
 [Harvest Task] Harvest cycle complete
 [Harvest Task] Starting harvest cycle on Core 1
 
@@ -92,95 +154,92 @@ Downloading 2 image(s)...
 ╚══════════════════════════════════════╝
 
 [Harvest] Broadcasting RREQ for topology discovery...
-[AODV] RREQ rx: orig=00:00:00:39:C2:00 dest=FF:FF:FF:FF:FF:FF hops=1 prevHop=71:CB:3F:70:72:CB
-[AODV] I am the destination — sending RREP (seqNum=2561)
-[AODV] RREQ broadcast for FF:FF:FF:FF:FF:FF (rreqId=3, seqNum=2561)
-[LoRa] Beacon TX (15 bytes) — ForestCam-GW-80E4, 3 images
+[AODV] RREQ broadcast for FF:FF:FF:FF:FF:FF (rreqId=3, seqNum=4098)
+[AODV] RREP rx: dest=DC:54:75:E4:79:D8 orig=DC:54:75:E4:80:E4 hops=1 prevHop=DC:54:75:E4:79:D8
+[AODV] Route DISCOVERED: DC:54:75:E4:79:D8 via DC:54:75:E4:79:D8 (1 hops)
+[AODV] RREP rx: dest=DC:54:75:E4:85:60 orig=DC:54:75:E4:80:E4 hops=1 prevHop=DC:54:75:E4:85:60
+[AODV] Route DISCOVERED: DC:54:75:E4:85:60 via DC:54:75:E4:85:60 (1 hops)
 [AODV] Route discovery TIMEOUT for FF:FF:FF:FF:FF:FF
-[Harvest] Route discovery period complete (1 routes found)
-[394054][I][CoapClient.cpp:60] begin(): CoapClient: Ready (local
---- Announced node ForestCam-8560 (IP=192.168.4.2, images=2) ---
- port 0)
-=== GET /info from ForestCam-8560 ===
-[Election] ELECTION from DC:54:75:E4:85:[Election] Suppressing lower-priority candidate
-Response: {"count":2,"block_size":1024,"images":[{"id":0,"name":"/images/062625_18b.jpeg","size":84919,"blocks":83},{"id":1,"name":"/images/1920x1080-aesthetic-glrfk0ntspz3tvxg.jpeg","size":27822,"blocks":28}]}
-Downloading 2 image(s)...
+[Harvest] Route discovery period complete (3 routes found)
 
-  === Download /image/0 ===
-[Election] Sending COORDINATOR (we're already gateway)
-[Election] ELECTION from DC:54:75:E4:85:60 (pri=0x6085E475)
-[Election] Suppressing lower-priority candidate
-[Election] Sending COORDINATOR (we're already gateway)
-[Election] SUPPRESS from DC:54:75:E4:79:D8 (pri=0xD879E475)
-[400326][I][CoapClient.cpp:418] downloadImagePipelined(): CoapClient: Pipelined download — image/0, window=3
-[400663][I][CoapClient.cpp:522] downloadImagePipelined(): CoapClient: Image 0 — 84919 bytes, ~83 blocks
-  Block 0 — 1024 bytes (1.2%)
-  Block 50 — 52224 bytes (61.4%)
-  Block 82 — 84919 bytes (99.9%)
-[405721][I][CoapClient.cpp:573] downloadImagePipelined(): CoapClient: Pipelined download complete — 84919 bytes, 83 blocks, 11529 ms, 7.2 KB/s
-    Bytes: 84919 | Blocks: 83 | Time: 11529 ms | Speed: 7.2 KB/s
-    Saved: /received/node_8560_boot001_000394s_img_000.jpg
-[405816][I][CoapClient.cpp:612] verifyChecksum(): CoapClient: Checksum verify — local=6426, server=6426 → PASS
-    Checksum: 0x191A — PASS
-
-  === Download /image/1 ===
-[411974][I][CoapClient.cpp:418] downloadImagePipelined(): CoapClient: Pipelined download — image/1, window=3
-[412379][I][CoapClient.cpp:522] downloadImagePipelined(): CoapClient: Image 1 — 27822 bytes, ~28 blocks
-  Block 0 — 1024 bytes (3.6%)
-  Block 27 — 27822 bytes (97.0%)
-[414092][I][CoapClient.cpp:573] downloadImagePipelined(): CoapClient: Pipelined download complete — 27822 bytes, 28 blocks, 8266 ms, 3.3 KB/s
-    Bytes: 27822 | Blocks: 28 | Time: 8266 ms | Speed: 3.3 KB/s
-    Saved: /received/node_8560_boot001_000405s_img_001.jpg
-[414224][I][CoapClient.cpp:612] verifyChecksum(): CoapClient: Checksum verify — local=14843, server=14843 → PASS
-    Checksum: 0x39FB — PASS
-
-  Node ForestCam-8560: 2/2 images OK
-
-[414255][I][CoapClient.cpp:72] stop(): CoapClient: Stopped
-
---- Announced node ForestCam-79D8 (IP=192.168.4.3, images=2) ---
-[414281][I][CoapClient.cpp:60] begin(): CoapClient: Ready (local port 0)
+--- Announced node ForestCam-79D8 (IP=192.168.4.2, images=2) ---
+[447867][I][CoapClient.cpp:60] begin(): CoapClient: Ready (local port 0)
 === GET /info from ForestCam-79D8 ===
 Response: {"count":2,"block_size":1024,"images":[{"id":0,"name":"/images/Screenshot 2025-11-10 104218.jpeg","size":22079,"blocks":22},{"id":1,"name":"/images/Screenshot 2025-11-10 104337.jpeg","size":22901,"blocks":23}]}
 Downloading 2 image(s)...
 
   === Download /image/0 ===
 [LoRa] Beacon TX (15 bytes) — ForestCam-GW-80E4, 3 images
-[420673][I][CoapClient.cpp:418] downloadImagePipelined(): CoapClient: Pipelined download — image/0, window=3
-[420934][I][CoapClient.cpp:522] downloadImagePipelined(): CoapClient: Image 0 — 22079 bytes, ~22 blocks
+[AODV] Route to 00:00:00:71:C2:00 expired
+[455627][I][CoapClient.cpp:418] downloadImagePipelined(): CoapClient: Pipelined download — image/0, window=3
+[455850][I][CoapClient.cpp:522] downloadImagePipelined(): CoapClient: Image 0 — 22079 bytes, ~22 blocks
   Block 0 — 1024 bytes (4.5%)
   Block 21 — 22079 bytes (98.0%)
-[422373][I][CoapClient.cpp:573] downloadImagePipelined(): CoapClient: Pipelined download complete — 22079 bytes, 22 blocks, 7933 ms, 2.7 KB/s
-    Bytes: 22079 | Blocks: 22 | Time: 7933 ms | Speed: 2.7 KB/s
-    Saved: /received/node_79D8_boot001_000414s_img_000.jpg
-[422399][I][CoapClient.cpp:612] verifyChecksum(): CoapClient: Checksum verify — local=12989, server=12989 → PASS
+[457412][I][CoapClient.cpp:573] downloadImagePipelined(): CoapClient: Pipelined download complete — 22079 bytes, 22 blocks, 9292 ms, 2.3 KB/s
+    Bytes: 22079 | Blocks: 22 | Time: 9292 ms | Speed: 2.3 KB/s
+    Saved: /received/node_79D8_boot001_000448s_img_000.jpg
+[457527][I][CoapClient.cpp:612] verifyChecksum(): CoapClient: Checksum verify — local=12989, server=12989 → PASS
     Checksum: 0x32BD — PASS
 
   === Download /image/1 ===
-[428711][I][CoapClient.cpp:418] downloadImagePipelined(): CoapClient: Pipelined download — image/1, window=3
-[428924][I][CoapClient.cpp:522] downloadImagePipelined(): CoapClient: Image 1 — 22901 bytes, ~23 blocks
+[465060][I][CoapClient.cpp:418] downloadImagePipelined(): CoapClient: Pipelined download — image/1, window=3
+[465274][I][CoapClient.cpp:522] downloadImagePipelined(): CoapClient: Image 1 — 22901 bytes, ~23 blocks
   Block 0 — 1024 bytes (4.3%)
   Block 22 — 22901 bytes (97.2%)
-[430361][I][CoapClient.cpp:573] downloadImagePipelined(): CoapClient: Pipelined download complete — 22901 bytes, 23 blocks, 7951 ms, 2.8 KB/s
-    Bytes: 22901 | Blocks: 23 | Time: 7951 ms | Speed: 2.8 KB/s
-    Saved: /received/node_79D8_boot001_000422s_img_001.jpg
-[430389][I][CoapClient.cpp:612] verifyChecksum(): CoapClient: Checksum verify — local=46012, server=46012 → PASS
+[466852][I][CoapClient.cpp:573] downloadImagePipelined(): CoapClient: Pipelined download complete — 22901 bytes, 23 blocks, 9314 ms, 2.4 KB/s
+    Bytes: 22901 | Blocks: 23 | Time: 9314 ms | Speed: 2.4 KB/s
+    Saved: /received/node_79D8_boot001_000457s_img_001.jpg
+[466939][I][CoapClient.cpp:612] verifyChecksum(): CoapClient: Checksum verify — local=46012, server=46012 → PASS
     Checksum: 0xB3BC — PASS
 
   Node ForestCam-79D8: 2/2 images OK
 
-[430420][I][CoapClient.cpp:72] stop(): CoapClient: Stopped
-[430435][I][HarvestLoop.cpp:300] _doConnect(): Harvest: No more nodes to harvest
-[Harvest] Self-copy: vga.jpeg -> /received/node_SELF_boot001_000430s_img_000.jpg (10128 bytes)
-[Harvest] Self-copy: 1080p.jpeg -> /received/node_SELF_boot001_000435s_img_001.jpg (13248 bytes)
+[466970][I][CoapClient.cpp:72] stop(): CoapClient: Stopped
+
+--- Announced node ForestCam-8560 (IP=192.168.4.3, images=2) ---
+[466996][I][CoapClient.cpp:60] begin(): CoapClient: Ready (local port 0)
+=== GET /info from ForestCam-8560 ===
+Response: {"count":2,"block_size":1024,"images":[{"id":0,"name":"/images/062625_18b.jpeg","size":84919,"blocks":83},{"id":1,"name":"/images/1920x1080-aesthetic-glrfk0ntspz3tvxg.jpeg","size":27822,"blocks":28}]}
+Downloading 2 image(s)...
+
+  === Download /image/0 ===
+[474647][I][CoapClient.cpp:418] downloadImagePipelined(): CoapClient: Pipelined download — image/0, window=3
+[474891][I][CoapClient.cpp:522] downloadImagePipelined(): CoapClient: Image 0 — 84919 bytes, ~83 blocks
+  Block 0 — 1024 bytes (1.2%)
+  Block 50 — 52224 bytes (61.4%)
+  Block 82 — 84919 bytes (99.9%)
+[479923][I][CoapClient.cpp:573] downloadImagePipelined(): CoapClient: Pipelined download complete — 84919 bytes, 83 blocks, 12756 ms, 6.5 KB/s
+    Bytes: 84919 | Blocks: 83 | Time: 12756 ms | Speed: 6.5 KB/s
+    Saved: /received/node_8560_boot001_000467s_img_000.jpg
+[480044][I][CoapClient.cpp:612] verifyChecksum(): CoapClient: Checksum verify — local=6426, server=6426 → PASS
+    Checksum: 0x191A — PASS
+
+  === Download /image/1 ===
 [LoRa] Beacon TX (15 bytes) — ForestCam-GW-80E4, 3 images
+[487597][I][CoapClient.cpp:418] downloadImagePipelined(): CoapClient: Pipelined download — image/1, window=3
+[487831][I][CoapClient.cpp:522] downloadImagePipelined(): CoapClient: Image 1 — 27822 bytes, ~28 blocks
+  Block 0 — 1024 bytes (3.6%)
+  Block 27 — 27822 bytes (97.0%)
+[489561][I][CoapClient.cpp:573] downloadImagePipelined(): CoapClient: Pipelined download complete — 27822 bytes, 28 blocks, 9507 ms, 2.9 KB/s
+    Bytes: 27822 | Blocks: 28 | Time: 9507 ms | Speed: 2.9 KB/s
+    Saved: /received/node_8560_boot001_000480s_img_001.jpg
+[489678][I][CoapClient.cpp:612] verifyChecksum(): CoapClient: Checksum verify — local=14843, server=14843 → PASS
+    Checksum: 0x39FB — PASS
+
+  Node ForestCam-8560: 2/2 images OK
+
+[489708][I][CoapClient.cpp:72] stop(): CoapClient: Stopped
+[489723][I][HarvestLoop.cpp:303] _doConnect(): Harvest: No more nodes to harvest
+[Harvest] Self-copy: vga.jpeg -> /received/node_SELF_boot001_000489s_img_000.jpg (10128 bytes)
+[Harvest] Self-copy: 1080p.jpeg -> /received/node_SELF_boot001_000496s_img_001.jpg (13248 bytes)
 [LoRa] Beacon TX (15 bytes) — ForestCam-GW-80E4, 3 images
-[Election] ELECTION from DC:54:75:E4:79:D8 (pri=0xD879E475)
-[Election] Suppressing lower-priority candidate
+[Election] ELECTION from DC:54:75:E4:85:6[Election] Suppressing lower-priority candidate
 [Election] Sending COORDINATOR (we're already gateway)
-[Election] ELECTION from DC:54:75:E4:79:[Election] Suppressing lower-priority candidate
+[Election] ELECTION from DC:54:[Election] Suppressing lower-priority candidate
 [Election] Sending COORDINATOR (we're already gateway)
-[Harvest] Self-copy: 4k.jpg -> /received/node_SELF_boot001_000441s_img_002.jpg (967851 bytes)
+[Election] SUPPRESS from DC:54:75:E4:79:D8 (pri=0xD879E475)
+[LoRa] Beacon TX (15 bytes) — ForestCam-GW-80E4, 3 images
+[Harvest] Self-copy: 4k.jpg -> /received/node_SELF_boot001_000502s_img_002.jpg (967851 bytes)
 [Harvest] Self-copy complete: 3 image(s) copied
 
 ╔══════════════════════════════════════╗
@@ -188,15 +247,14 @@ Downloading 2 image(s)...
 ║     Nodes: 2 attempted, 2 OK, 0 fail ║
 ║     Images: 7 total                  ║
 ║     Data:   1148948 bytes                  ║
-║     Time:   42432 ms                     ║
+║     Time:   47906 ms                     ║
 ╚══════════════════════════════════════╝
 
 [Harvest Task] Harvest cycle complete
+[AODV] Route to DC:54:75:E4:79:D8 expired
+[AODV] Route to DC:54:75:E4:85:60 expired
 [LoRa] Beacon TX (15 bytes) — ForestCam-GW-80E4, 3 images
-[AODV] Route to 00:00:00:39:C2:00 expired
 [LoRa] Beacon TX (15 bytes) — ForestCam-GW-80E4, 3 images
-[LoRa] Beacon TX (15 bytes) — ForestCam-GW-80E4, 3 images
-[LoRa] Beacon TX (15 bytes) — ForestCam-GW-80E4, 3 images
-[Election] ELECTION from DC:54:75:E4:79:D[Election] Suppressing lower-priority candidate
+[Election] ELECTION from DC:54:75:E4:79:D8 (pri=0xD879E475)
+[Election] Suppressing lower-priority candidate
 [Election] Sending COORDINATOR (we're already gateway)
-[LoRa] Beacon TX (15 bytes) — ForestCam-GW-80E4, 3 images
