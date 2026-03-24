@@ -196,8 +196,15 @@ void ElectionManager::onElectionPacket(const uint8_t* buf, uint8_t len) {
                 _lastGatewayBeaconMs = millis();
                 _gatewayEverSeen = true;
                 rtcGatewayKnown = true;  // Persist for next timer wake
+                // Cache gateway SSID derived from coordinator's MAC
+                // so leaf can connect STA on next wake
+                BeaconPacket::macToSsid(pkt.senderId, NODE_ROLE_GATEWAY,
+                                        rtcGatewaySSID, sizeof(rtcGatewaySSID));
+                Serial.printf("[%s] Gateway SSID cached: %s\n", TAG, rtcGatewaySSID);
+
                 if (_state != ELECT_IDLE) {
                     Serial.printf("[%s] Coordinator announced — returning to IDLE\n", TAG);
+                    _cooldownUntilMs = millis() + ELECTION_RECLAIM_COOLDOWN_MS;
                     _enterState(ELECT_IDLE);
                 } else {
                     Serial.printf("[%s] Coordinator noted — gateway exists\n", TAG);
@@ -215,6 +222,8 @@ void ElectionManager::onElectionPacket(const uint8_t* buf, uint8_t len) {
                 _lastGatewayBeaconMs = millis();
                 _gatewayEverSeen = true;
                 rtcGatewayKnown = true;  // Original gateway is back
+                BeaconPacket::macToSsid(pkt.senderId, NODE_ROLE_GATEWAY,
+                                        rtcGatewaySSID, sizeof(rtcGatewaySSID));
                 if (_state != ELECT_IDLE) {
                     _enterState(ELECT_IDLE);
                 }
