@@ -126,6 +126,13 @@ void ElectionManager::onElectionPacket(const uint8_t* buf, uint8_t len) {
                 Serial.printf("[%s] Suppressing lower-priority candidate\n", TAG);
                 _sendElectionPacket(PKT_TYPE_SUPPRESS, ELECTION_TX_REPEAT, ELECTION_TX_GAP_MS);
 
+                // If we're already the acting gateway, also send COORDINATOR
+                // so the lower-priority node knows to stop trying.
+                if (_state == ELECT_ACTING_GATEWAY) {
+                    Serial.printf("[%s] Sending COORDINATOR (we're already gateway)\n", TAG);
+                    _sendElectionPacket(PKT_TYPE_COORDINATOR, ELECTION_TX_REPEAT, ELECTION_TX_GAP_MS);
+                }
+
                 // Start our own election if no fresh gateway beacon exists.
                 // A "fresh" beacon is one received within the timeout period.
                 // If gateway beacon is stale (>90s), the gateway is likely dead —
@@ -134,7 +141,8 @@ void ElectionManager::onElectionPacket(const uint8_t* buf, uint8_t len) {
                 bool gatewayFresh = _gatewayEverSeen &&
                                     (millis() - _lastGatewayBeaconMs < ELECTION_GW_TIMEOUT_MS);
 
-                if ((_state == ELECT_IDLE || _state == ELECT_STOOD_DOWN) && !gatewayFresh) {
+                if ((_state == ELECT_IDLE || _state == ELECT_STOOD_DOWN) && !gatewayFresh
+                    && millis() >= _cooldownUntilMs) {
                     if (_gatewayEverSeen) {
                         Serial.printf("[%s] Gateway beacon stale — clearing and entering election\n", TAG);
                         _gatewayEverSeen = false;
