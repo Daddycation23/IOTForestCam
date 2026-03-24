@@ -126,10 +126,20 @@ void ElectionManager::onElectionPacket(const uint8_t* buf, uint8_t len) {
                 Serial.printf("[%s] Suppressing lower-priority candidate\n", TAG);
                 _sendElectionPacket(PKT_TYPE_SUPPRESS, ELECTION_TX_REPEAT, ELECTION_TX_GAP_MS);
 
-                // Only start our own election if we don't already know of a gateway.
-                // If _gatewayEverSeen is true, a gateway exists — suppress the pretender
-                // but stay IDLE and let the real gateway handle it.
-                if ((_state == ELECT_IDLE || _state == ELECT_STOOD_DOWN) && !_gatewayEverSeen) {
+                // Start our own election if no fresh gateway beacon exists.
+                // A "fresh" beacon is one received within the timeout period.
+                // If gateway beacon is stale (>90s), the gateway is likely dead —
+                // enter election to take over. This also breaks the infinite
+                // SUPPRESS→STOOD_DOWN loop for lower-priority nodes.
+                bool gatewayFresh = _gatewayEverSeen &&
+                                    (millis() - _lastGatewayBeaconMs < ELECTION_GW_TIMEOUT_MS);
+
+                if ((_state == ELECT_IDLE || _state == ELECT_STOOD_DOWN) && !gatewayFresh) {
+                    if (_gatewayEverSeen) {
+                        Serial.printf("[%s] Gateway beacon stale — clearing and entering election\n", TAG);
+                        _gatewayEverSeen = false;
+                        rtcGatewayKnown = false;
+                    }
                     _currentElectionId = pkt.electionId;
                     _enterState(ELECT_ELECTION_START);
                 }
@@ -150,6 +160,10 @@ void ElectionManager::onElectionPacket(const uint8_t* buf, uint8_t len) {
             if (suppressorHigher) {
                 if (_state == ELECT_WAITING || _state == ELECT_ELECTION_START) {
                     _enterState(ELECT_STOOD_DOWN);
+                } else if (_state == ELECT_ACTING_GATEWAY) {
+                    // Higher-priority node is alive — yield immediately
+                    Serial.printf("[%s] SUPPRESS from higher priority while ACTING_GATEWAY — yielding\n", TAG);
+                    _enterState(ELECT_RECLAIMED);
                 }
             }
             break;

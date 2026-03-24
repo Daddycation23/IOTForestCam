@@ -251,6 +251,19 @@ void taskLoRaLeafRelay(void* param) {
             }
             Serial.println("[Promoted GW] Harvest capability enabled, listening...");
         }
+
+        // Detect demotion: restore leaf WiFi AP and SSID
+        if (!nowPromoted && wasPromoted) {
+            uint8_t mac[6];
+            WiFi.macAddress(mac);
+            snprintf(_apSSID, sizeof(_apSSID), "%s-%02X%02X", AP_SSID_PREFIX, mac[4], mac[5]);
+            WiFi.softAPdisconnect(true);
+            WiFi.mode(WIFI_AP);
+            WiFi.softAP(_apSSID, AP_PASS);
+            delay(100);
+            Serial.printf("[Demoted] WiFi AP restored to: %s\n", _apSSID);
+        }
+
         wasPromoted = nowPromoted;
 
         if (nowPromoted) {
