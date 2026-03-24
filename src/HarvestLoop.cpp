@@ -14,6 +14,9 @@
 #include "TaskConfig.h"
 #include "DeepSleepManager.h"   // rtcBootCount
 
+// Access global _apSSID for AP restore after relay harvest
+extern char _apSSID[32];
+
 static const char* TAG = "Harvest";
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -779,10 +782,20 @@ void HarvestLoop::_selfCopyImages() {
 void HarvestLoop::_doDone() {
     _stats.totalTimeMs = millis() - _cycleStartMs;
 
-    // Explicit resource cleanup with error logging
+    // Explicit resource cleanup
     _coapClient.stop();
-    WiFi.disconnect(true);
-    _relayHarvesting = false;  // Ensure relay state is clean
+
+    // Only disconnect WiFi if we were connected as STA to a relay.
+    // Gateway-as-AP: do NOT tear down the gateway's own AP — leaves are connected to it.
+    if (_relayHarvesting) {
+        WiFi.disconnect(true);
+        // Restore gateway AP mode after relay STA session
+        WiFi.mode(WIFI_AP);
+        WiFi.softAP(_apSSID, HARVEST_WIFI_PASSWORD);
+        vTaskDelay(pdMS_TO_TICKS(200));
+        Serial.printf("[%s] Restored gateway AP: %s\n", TAG, _apSSID);
+    }
+    _relayHarvesting = false;
 
     // ── Self-copy: gateway's own /images/ → /received/ ──────
     _selfCopyImages();

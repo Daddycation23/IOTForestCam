@@ -48,7 +48,7 @@ enum CoapClientError : uint8_t {
 };
 
 /** Human-readable error names for logging. */
-static const char* coapClientErrorStr(CoapClientError err) {
+inline const char* coapClientErrorStr(CoapClientError err) {
     switch (err) {
         case COAP_CLIENT_OK:                return "OK";
         case COAP_CLIENT_TIMEOUT:           return "TIMEOUT";

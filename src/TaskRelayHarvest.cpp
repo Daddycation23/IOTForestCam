@@ -160,7 +160,7 @@ void relayHarvest(const HarvestCmdPacket& cmd) {
     }
 
     // ── Phase 2: Connect to gateway AP as STA to serve cached images ──
-    WiFi.disconnect(true);
+    // WiFi already disconnected above (line 159) — just wait for cleanup
     vTaskDelay(pdMS_TO_TICKS(200));
 
     // ── Send HARVEST_ACK via LoRa (thread-safe) ──────────────

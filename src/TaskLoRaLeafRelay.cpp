@@ -295,8 +295,9 @@ void taskLoRaLeafRelay(void* param) {
                 promoteHarvestTriggered = true;
             }
 
-            // Reset listen timer after harvest completes
-            if (curState == HARVEST_IDLE && prevPromoteState == HARVEST_DONE) {
+            // Reset listen timer after harvest completes or aborts
+            // (DONE→IDLE is normal completion; any other→IDLE is abort)
+            if (curState == HARVEST_IDLE && prevPromoteState != HARVEST_IDLE) {
                 promoteListenStartMs = millis();
                 promoteHarvestTriggered = false;
             }

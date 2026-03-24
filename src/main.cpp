@@ -59,8 +59,8 @@ const char* AP_SSID_PREFIX = "ForestCam";
 const char* AP_PASS        = "forestcam123";
 char        _apSSID[32];
 
-volatile bool           _loraReady    = false;
-volatile bool           _gwLoraReady  = false;
+std::atomic<bool>       _loraReady{false};
+std::atomic<bool>       _gwLoraReady{false};
 std::atomic<bool>       _relayBusy{false};
 std::atomic<uint8_t>    _relayCmdId{0};
 std::atomic<bool>       _relayCachedServing{false};
