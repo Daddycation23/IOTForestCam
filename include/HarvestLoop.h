@@ -2,13 +2,21 @@
  * @file HarvestLoop.h
  * @brief Gateway harvest state machine — sequential multi-node image download
  *
- * Orchestrates the process of connecting to each discovered leaf node's
- * WiFi AP and downloading images via CoAP Block2 transfer. Supports both
- * direct (1-hop) and multi-hop (via relay) harvesting using AODV routes.
+ * Orchestrates downloading images from leaf nodes via CoAP Block2 transfer.
+ * Under the gateway-as-AP architecture, the gateway runs a persistent WiFi AP
+ * and leaves connect as STA clients. The primary harvest flow is announce-driven:
+ * leaves POST /announce on wake, gateway downloads from their STA IP.
  *
- * State Flow (direct harvest):
- *   IDLE --> START --> ROUTE_DISCOVERY --> DISCONNECT --> CONNECT --> COAP_INIT
+ * State Flow (announce-driven harvest — primary):
+ *   IDLE --> START --> DISCONNECT --> CONNECT --> COAP_INIT
  *        --> DOWNLOAD --> NEXT --> (loop) --> DONE --> IDLE
+ *   Note: CONNECT is a no-op for announced nodes (already on gateway AP).
+ *         ROUTE_DISCOVERY and WAKE_NODE are skipped.
+ *
+ * State Flow (legacy direct harvest — fallback):
+ *   IDLE --> START --> ROUTE_DISCOVERY --> DISCONNECT --> WAKE_NODE
+ *        --> CONNECT --> COAP_INIT --> DOWNLOAD --> NEXT --> (loop) --> DONE --> IDLE
+ *   WAKE_NODE — legacy/bypassed (LoRa wake removed; only used if fallback direct connect)
  *
  * State Flow (multi-hop harvest via relay):
  *   ... --> RELAY_CMD --> RELAY_WAIT --> DISCONNECT --> CONNECT(relay)
@@ -39,7 +47,7 @@ enum HarvestState : uint8_t {
     HARVEST_START,              ///< Begin a harvest cycle
     HARVEST_ROUTE_DISCOVERY,    ///< Broadcast RREQ for all nodes (AODV)
     HARVEST_DISCONNECT,         ///< Disconnect from current WiFi network
-    HARVEST_WAKE_NODE,          ///< Send LoRa wake ping before WiFi connect
+    HARVEST_WAKE_NODE,          ///< Legacy — bypassed for announced nodes (LoRa wake removed)
     HARVEST_CONNECT,            ///< Connect to next leaf's WiFi AP (direct) or relay's AP
     HARVEST_COAP_INIT,          ///< Initialize CoAP client on new network
     HARVEST_DOWNLOAD,           ///< Download images from current node

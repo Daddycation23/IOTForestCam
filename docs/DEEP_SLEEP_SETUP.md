@@ -1,10 +1,10 @@
-# Deep Sleep + Two-Step Wake Protocol — Setup & Testing
+# Timer-Based Deep Sleep — Setup & Testing
 
 ## Overview
 
 Leaf and relay nodes enter deep sleep between harvest cycles to conserve
-power. The SX1280's DIO1 pin (GPIO 9) triggers ESP32-S3 wakeup when a
-LoRa packet is received.
+power. A 180-second timer wakeup is the sole wake source — LoRa DIO1 ext1
+wake is **not used** (unreliable on SX1280 PA hardware).
 
 **Gateway nodes never sleep.**
 
@@ -13,35 +13,38 @@ LoRa packet is received.
 | State | Current Draw (est.) |
 |-------|-------------------|
 | Active (WiFi + LoRa + SD) | ~150-250 mA |
-| Deep sleep (SX1280 RX) | < 10 µA |
+| Deep sleep | < 10 µA |
 
 ---
 
-## Two-Step Wake Protocol
+## Wake Cycle
 
 ```
-Gateway                              Leaf (sleeping)
+Leaf (sleeping)                          Gateway (persistent AP)
   |                                        |
-  |── WAKE_PING (0x40) ──────────────────>|  DIO1 HIGH → ESP32 wakes
-  |                                        |  Reinit radio, start WiFi AP
-  |   (wait 2.5s)                          |
+  |  180s timer fires → ESP32 wakes        |
+  |  Restore RTC state (role, SSID, etc.)  |
+  |  WiFi.mode(WIFI_STA)                   |
+  |  WiFi.begin(rtcGatewaySSID)            |
+  |── STA connect to gateway AP ────────>  |  (ForestCam-GW-XXYY)
+  |── POST /announce (MAC + imgCount) ──>  |  Gateway enqueues harvest
+  |                                        |── GET /info, GET /image ──>|
+  |<── CoAP Block2 pipelined download ──   |  (downloads from leaf STA IP)
   |                                        |
-  |── HARVEST_CMD ────────────────────────>|  Download begins
-  |<── images via CoAP ──────────────────  |
-  |                                        |
-  |                                        |  Timeout → deep sleep
+  |  120s idle timeout → deep sleep        |
 ```
 
 1. Leaf enters deep sleep with 180-second timer wakeup armed
 2. Timer fires → ESP32-S3 wakes, fast-path boot from RTC memory
-3. Leaf reinits radio, starts WiFi AP + CoAP server
-4. Leaf stays awake for 120s (SLEEP_ACTIVE_TIMEOUT_MS)
-5. Gateway connects during awake window, downloads images via CoAP
-6. After harvest or timeout, leaf returns to deep sleep
+3. Leaf connects as STA to gateway's persistent WiFi AP (`rtcGatewaySSID`)
+4. Leaf sends CoAP POST `/announce` with MAC + image count
+5. Gateway downloads images from leaf via CoAP pipelined Block2
+6. After harvest or 120s idle timeout, leaf returns to deep sleep
 
-Note: DIO1 ext1 wakeup is also armed but does not work reliably on the
-LILYGO T3-S3 V1.2 (hardware limitation — SX1280 PA loses power during
-deep sleep). Timer wake is the primary reliable wake source.
+On **cold boot** (first power-on), the leaf has no cached gateway SSID.
+It starts in AP mode, participates in election, and caches the gateway
+SSID from COORDINATOR/GW_RECLAIM/beacon packets. Subsequent timer wakes
+use the cached SSID for STA connect.
 
 ---
 
@@ -50,15 +53,67 @@ deep sleep). Timer wake is the primary reliable wake source.
 ### Cold Boot (power-on)
 1. 5-second OLED role selection menu (BOOT button)
 2. Full hardware init (SD, LoRa, WiFi AP, CoAP server)
-3. Active for 2 minutes (allows first harvest)
-4. → Deep sleep
-
-### LoRa Wake (fast-path)
-1. Skip role menu — restore from RTC memory
-2. Init radio + WiFi AP immediately
-3. Wait for HARVEST_CMD (3s timeout)
-4. Serve images via CoAP
+3. Election runs, gateway SSID cached to RTC
+4. Active for 2 minutes (allows first harvest)
 5. → Deep sleep
+
+### Timer Wake (fast-path)
+1. Skip role menu — restore from RTC memory
+2. Connect as STA to gateway AP (`rtcGatewaySSID`)
+3. POST `/announce` to gateway
+4. Serve images via CoAP when gateway downloads
+5. 120s idle timeout → deep sleep
+
+### Fallback (no cached SSID)
+1. If `rtcGatewaySSID` is empty, fall back to AP mode
+2. Behave like cold boot (start AP, wait for gateway-initiated harvest)
+
+---
+
+## GPIO Hold (SPI Bus Stability)
+
+During deep sleep, certain GPIOs must be held to keep the SPI bus stable
+and prevent floating pins from causing issues on wake:
+
+- `gpio_hold_en(GPIO_NUM_21)` — RXEN (PA receive enable), held HIGH
+- `gpio_deep_sleep_hold_en()` — enables hold across deep sleep
+
+On wake, holds are released:
+- `gpio_hold_dis(GPIO_NUM_21)`
+- `gpio_deep_sleep_hold_dis()`
+
+This prevents SPI bus contention between the SX1280 and SD card on wake.
+
+---
+
+## RTC State Persistence
+
+The following state is preserved in RTC memory across deep sleep:
+
+| Variable | Purpose |
+|----------|---------|
+| `rtcStateValid` | Guard flag — true after first successful save |
+| `rtcRole` | Node role (LEAF/RELAY/GATEWAY) |
+| `rtcGatewaySSID` | Cached gateway AP SSID (for STA connect on wake) |
+| `rtcGatewayKnown` | Whether a gateway was known before sleep |
+| `rtcBootCount` | Incremented each wake cycle |
+| `rtcImageIndex` | Last image index served |
+
+---
+
+## Sleep Guard Logic
+
+The node will **not** enter deep sleep if any of these conditions are true:
+
+| Guard | Reason |
+|-------|--------|
+| `isElectionActive()` | Election in progress — must participate |
+| `isGatewayMissing()` | Gateway absent >60s — election may be needed |
+| CoAP `blocksSent()` increasing | Active image transfer in progress |
+| CoAP `requestCount()` increasing | Gateway polling (keep-alive) |
+
+Sleep is checked in `TaskLoRaLeafRelay.cpp` with a 120s idle timeout
+(`SLEEP_ACTIVE_TIMEOUT_MS`). Any CoAP activity resets the timer.
 
 ---
 
@@ -70,12 +125,12 @@ deep sleep). Timer wake is the primary reliable wake source.
 pio test -e native -f test_deep_sleep
 ```
 
-16 tests validate: wake packet types, active timeout logic, RTC persistence, two-step timing, harvest wake state.
+16 tests validate: wake types, active timeout logic, RTC persistence, harvest wake state.
 
 ### Hardware Test (3 boards)
 
 1. Flash all boards: `pio run -e esp32s3_unified -t upload`
-2. Assign roles: 1 Gateway, 1 Leaf, 1 Relay
+2. Assign roles: 1 Gateway, 2 Leaves (or auto-negotiate)
 
 ### What to Watch
 
@@ -83,25 +138,26 @@ pio test -e native -f test_deep_sleep
 ```
 [DeepSleep] Active timeout expired — entering deep sleep
 [DeepSleep] Boot count: 1
-[DeepSleep] State saved — role=0, ssid=ForestCam-AABB, imgIdx=-1, bootCount=1
-[DeepSleep] Radio in continuous RX for DIO1 wakeup
-[DeepSleep] Entering deep sleep — DIO1 (GPIO 9) armed for ext1 wakeup, boot #1
+[DeepSleep] State saved — role=0, ssid=ForestCam-GW-AABB, imgIdx=-1, bootCount=1
+[DeepSleep] Entering deep sleep — timer 180s, boot #1
 ```
 
 **Leaf serial output — waking up:**
 ```
 [Boot] Reset reason: Deep sleep (boot #2)
-[Wake] Fast-path: restored role=Leaf, SSID=ForestCam-AABB
+[Wake] Fast-path: restored role=Leaf, gateway SSID=ForestCam-GW-AABB
+[WiFi] STA connecting to ForestCam-GW-AABB...
+[WiFi] STA connected, IP=192.168.4.x
+[CoAP] POST /announce sent — MAC=AABBCCDDEEFF, images=3
 ```
 
-**Gateway serial output — wake + harvest:**
+**Gateway serial output — announce + harvest:**
 ```
-[Harvest] -> WAKE_NODE
-[Harvest] WAKE_PING broadcast sent — waiting 12000ms for sleeping nodes to reboot
-[Harvest] -> CONNECT
---- Connecting to ForestCam-AABB ---
-..........
-[OK] Connected
+[CoAP] POST /announce from 192.168.4.x — MAC=...EEFF, 3 images
+[Harvest] Announce-triggered harvest for node EEFF
+[CoAP] Block 0/55 downloaded (1024 bytes)
+...
+[Harvest] Node EEFF complete — 3 images, 156 KB
 ```
 
 ### Verifying Deep Sleep Current
@@ -113,25 +169,14 @@ If you have a multimeter:
 4. Active: ~150-250 mA
 5. After 2 min: should drop to < 10 µA
 
-### Timing Test
-
-1. Let leaf go to sleep (wait 2 minutes after boot)
-2. Leaf OLED goes blank and serial stops
-3. Gateway starts harvest cycle → sends WAKE_PING
-4. Leaf should wake within 100ms
-5. Leaf WiFi AP should be up within 2.5s
-6. Gateway should successfully connect and download
-
 ---
 
 ## Configuration
 
 | Constant | Default | File | Purpose |
 |----------|---------|------|---------|
-| `SLEEP_ACTIVE_TIMEOUT_MS` | 120000 (2 min) | `DeepSleepManager.h` | Stay awake after boot |
-| `SLEEP_WAKE_CMD_TIMEOUT_MS` | 3000 (3s) | `DeepSleepManager.h` | Wait for cmd after wake |
-| `SLEEP_WAKE_SETTLE_DELAY_MS` | 500 (0.5s) | `DeepSleepManager.h` | Sender delay between ping and cmd |
-| `LORA_DIO1` | GPIO 9 | `LoRaRadio.h` | DIO1 wakeup pin |
+| `SLEEP_ACTIVE_TIMEOUT_MS` | 120000 (2 min) | `DeepSleepManager.h` | Stay awake after boot/wake |
+| `SLEEP_TIMER_US` | 180000000 (180s) | `DeepSleepManager.h` | Deep sleep timer duration |
 
 ---
 
@@ -140,20 +185,12 @@ If you have a multimeter:
 | Problem | Likely Cause | Fix |
 |---------|-------------|-----|
 | Leaf never sleeps | CoAP requests keep resetting timer | Check `onActivity()` calls |
-| Leaf doesn't wake | GPIO 21 (RXEN) not held HIGH during sleep | Ensure `gpio_hold_en(GPIO_NUM_21)` + `gpio_deep_sleep_hold_en()` are called before sleep. Without RXEN held, the PA receive path is disabled and DIO1 never fires. |
-| Leaf wakes but can't connect | WiFi AP not starting fast enough | Increase wait in `_doWakeNode()` (default 12s) |
+| Leaf wakes but can't connect to gateway | Gateway AP not running or SSID mismatch | Check `rtcGatewaySSID` matches gateway's actual SSID |
 | RTC state lost | Not saved before sleep | Check `saveState()` is called in sleep path |
 | Fast-path skipped | `rtcStateValid` is false | First boot always uses normal path; fast-path starts from boot #2 |
 | Leaf sleeps during election | Sleep timer fired before election started | `isGatewayMissing()` guard blocks sleep when GW beacon missing >60s. Also `isElectionActive()` blocks sleep during active election. Check `ElectionManager.h` |
-
----
-
-## New Packet Types
-
-| Type | Value | Purpose |
-|------|-------|---------|
-| `PKT_TYPE_WAKE_PING` | `0x40` | Triggers DIO1 wakeup (3-byte minimal packet) |
-| `PKT_TYPE_WAKE_BEACON_REQ` | `0x41` | Request beacon after wake |
+| Leaf sleeps during harvest | `blocksSent()` not polled | Ensure CoAP activity resets sleep timer via `onActivity()` |
+| Gateway SSID not cached | No COORDINATOR/beacon received before first sleep | First cycle uses AP mode; SSID is cached for subsequent wakes |
 
 ---
 
@@ -161,11 +198,10 @@ If you have a multimeter:
 
 | File | Change |
 |------|--------|
-| `include/DeepSleepManager.h` | NEW — Sleep/wake management class |
-| `src/DeepSleepManager.cpp` | NEW — Implementation with ext1 wakeup, RTC persistence |
-| `include/AodvPacket.h` | Added `PKT_TYPE_WAKE_PING` and `PKT_TYPE_WAKE_BEACON_REQ` |
-| `include/HarvestLoop.h` | Added `HARVEST_WAKE_NODE` state |
-| `src/HarvestLoop.cpp` | Implemented `_doWakeNode()` with two-step wake |
-| `src/main.cpp` | Fast-path wake in setup(), sleep check with election guards in leaf/relay task |
+| `include/DeepSleepManager.h` | Sleep/wake management class with timer wake |
+| `src/DeepSleepManager.cpp` | Implementation with timer wakeup, RTC persistence |
+| `include/HarvestLoop.h` | `HARVEST_WAKE_NODE` state (legacy, bypassed for announced nodes) |
+| `src/HarvestLoop.cpp` | Announce-driven harvest flow |
+| `src/TaskLoRaLeafRelay.cpp` | Sleep check with election + CoAP activity guards |
 | `include/ElectionManager.h` | `isGatewayMissing()` + `isElectionActive()` sleep guards |
-| `test/test_deep_sleep/` | NEW — 16 unit tests |
+| `test/test_deep_sleep/` | 16 unit tests |

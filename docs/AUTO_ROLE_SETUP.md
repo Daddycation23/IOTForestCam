@@ -196,6 +196,56 @@ detects the higher priority and yields. The highest-priority node always wins.
 
 ---
 
+## Leaf-Initiated Announce Flow (Gateway-as-AP)
+
+Under the gateway-as-AP architecture, the harvest flow is reversed — leaves
+initiate contact with the gateway instead of vice versa.
+
+### Timer Wake → STA Connect → POST /announce
+
+```
+Leaf (timer wake)                    Gateway (persistent AP: ForestCam-GW-XXYY)
+  |                                    |
+  |  Restore rtcGatewaySSID from RTC   |
+  |  WiFi.mode(WIFI_STA)              |
+  |── WiFi.begin(rtcGatewaySSID) ──>  |
+  |                                    |  (leaf joins as STA client)
+  |── POST /announce (MAC+imgCnt) ──> |  → xAnnounceQueue
+  |                                    |  → taskHarvestGateway downloads
+  |<── GET /info, GET /image ───────  |
+  |                                    |
+  |  120s idle → deep sleep            |
+```
+
+### Gateway SSID Caching
+
+`rtcGatewaySSID` is set from multiple sources, all derived from the sender's MAC:
+
+| Source | When | How |
+|--------|------|-----|
+| **COORDINATOR packet** | After election, winner broadcasts COORDINATOR | SSID derived from sender MAC: `ForestCam-GW-XXYY` |
+| **GW_RECLAIM packet** | Original gateway reclaims role | SSID derived from sender MAC |
+| **Gateway beacon** | Periodic LoRa beacon from gateway | SSID derived from beacon sender MAC |
+
+The SSID is **not transmitted on wire** (beacon v2 format). It is always
+derived from the sender MAC as `ForestCam-GW-XXYY` where `XX` and `YY`
+are the last two bytes of the MAC address.
+
+### Election Changes
+
+- **ACTING_GATEWAY sends COORDINATOR on suppress:** When an acting gateway
+  receives a SUPPRESS from a higher-priority node, it broadcasts a
+  COORDINATOR packet before yielding, so leaves can cache the new gateway SSID.
+- **SUPPRESS yields ACTING_GATEWAY:** A suppressed node transitions to LEAF
+  and recognizes the suppressor as the new gateway.
+- **Cooldown after demotion:** After being demoted from ACTING_GATEWAY back
+  to LEAF, the node enters a cooldown period before it can participate in
+  another election, preventing rapid promote/demote oscillation.
+- **MAC tiebreaker:** Election uses Bully algorithm with MAC-based priority
+  as tiebreaker — highest MAC always wins.
+
+---
+
 ## Key Files
 
 | File | Purpose |

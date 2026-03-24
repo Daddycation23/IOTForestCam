@@ -80,9 +80,9 @@
 
 ---
 
-### 12. Deep Sleep + Two-Step Wake Protocol
+### 12. Timer-Based Deep Sleep
 - **Branch:** `feature/deep-sleep`
-- **Description:** Leaf/relay nodes enter deep sleep between harvests (<10µA). Gateway sends WAKE_PING over LoRa to trigger DIO1 ext1 wakeup. Fast-path boot from RTC memory skips role menu. New HARVEST_WAKE_NODE state in harvest loop.
+- **Description:** Leaf/relay nodes enter deep sleep between harvests (<10µA). 180s timer wakeup (LoRa DIO1 ext1 unreliable on SX1280 PA — not used). Fast-path boot from RTC memory skips role menu. On wake, leaf connects as STA to gateway AP and announces via CoAP POST /announce.
 - **Key Files:** `include/DeepSleepManager.h`, `src/DeepSleepManager.cpp`, `include/AodvPacket.h`, `src/HarvestLoop.cpp`, `src/main.cpp`
 - **Tests:** `test/test_deep_sleep/` (16 unit tests)
 - **Test Guide:** [docs/DEEP_SLEEP_SETUP.md](DEEP_SLEEP_SETUP.md)
@@ -138,12 +138,12 @@
 
 ### 14. Beacon-Reactive Harvest
 - **Branch:** `feature/reactive-harvest`
-- **Description:** Fixes harvest timing misalignment with timer-based deep sleep. Previously, the gateway waited a fixed 180s before harvesting — leaves were often asleep. Now the gateway reacts to leaf beacons and harvests within 15s of detecting an awake node.
+- **Description:** Fixes harvest timing misalignment with timer-based deep sleep. Under the gateway-as-AP architecture, leaves connect as STA to the gateway's persistent WiFi AP — no WiFi hopping needed. Gateway reacts to leaf beacons and harvests within 15s of detecting an awake node.
 - **Key Changes:**
   1. **Persist gateway knowledge in RTC:** `rtcGatewayKnown` survives deep sleep. On timer wake, `ElectionManager::begin()` restores `_gatewayEverSeen` — eliminates 15-30s election thrashing per wake cycle.
   2. **Immediate beacon on boot/wake:** `nextInterval = 0` fires first beacon immediately instead of waiting 30s. Gateway detects leaf within seconds of wake.
   3. **Beacon-reactive harvest trigger:** Gateway starts harvest 15s after first new beacon (`HARVEST_REACTIVE_DELAY_MS`), instead of waiting the full 180s. 180s remains as a max fallback. Applies to both boot-gateway and promoted-gateway paths.
-  4. **Skip WAKE_NODE for awake nodes:** `_doDisconnect()` peeks at next node's `lastSeenMs` — if beacon < 60s ago, skips the 12s WAKE_NODE wait and goes directly to CONNECT.
+  4. **Skip WAKE_NODE for announced nodes:** Announced nodes (via POST /announce) bypass the WAKE_NODE state entirely — gateway downloads directly from the leaf's STA IP on its own AP.
   5. **Fix registry.update() return value:** Previously returned `true` for both new nodes and existing refreshes, causing the reactive trigger to fire every ~90s (leaves never slept). Now returns `false` for refreshes — reactive trigger only fires on genuinely new/reappeared nodes.
   6. **Reset rtcGatewayKnown on gateway timeout:** If the gateway disappears, `rtcGatewayKnown` is cleared so the next wake cycle runs a proper election instead of waiting 90s for a beacon that won't come.
 - **Key Files:** `include/DeepSleepManager.h`, `src/DeepSleepManager.cpp`, `include/ElectionManager.h`, `src/ElectionManager.cpp`, `src/HarvestLoop.cpp`, `src/main.cpp`, `src/NodeRegistry.cpp`
@@ -153,7 +153,7 @@
 - **Branch:** `feature/reactive-harvest`
 - **Description:** Reverses the harvest flow so leaves initiate image transfer. On timer wake, leaves connect to the gateway's WiFi AP as STA, send a CoAP POST /announce with MAC + image count, and wait for the gateway to download their images. The gateway stays on its own AP and downloads from the leaf's STA IP. This eliminates all timing alignment issues with deep sleep.
 - **Key Changes:**
-  1. **RTC gateway SSID persistence:** `rtcGatewaySSID[32]` cached from gateway beacons, used to connect as STA on timer wake.
+  1. **RTC gateway SSID persistence:** `rtcGatewaySSID[32]` cached from COORDINATOR/GW_RECLAIM packets and gateway beacons (SSID derived from sender MAC as `ForestCam-GW-XXYY`). Used to connect as STA on timer wake.
   2. **Leaf STA mode on timer wake:** `initLeafRelay()` detects timer wake + known gateway → `WiFi.mode(WIFI_STA)` → `WiFi.begin(rtcGatewaySSID)`. Falls back to AP mode if connect fails.
   3. **CoapClient::post() method:** New POST method for sending the 7-byte announce payload (6-byte MAC + 1-byte imageCount).
   4. **CoAP POST /announce endpoint:** Gateway's CoapServer accepts POST /announce, extracts sender IP from UDP, enqueues `AnnounceMessage` to `xAnnounceQueue`.
@@ -165,23 +165,59 @@
 - **Key Files:** `include/CoapClient.h`, `src/CoapClient.cpp`, `include/CoapServer.h`, `src/CoapServer.cpp`, `include/TaskConfig.h`, `src/TaskConfig.cpp`, `include/NodeRegistry.h`, `src/NodeRegistry.cpp`, `include/DeepSleepManager.h`, `src/DeepSleepManager.cpp`, `src/ElectionManager.cpp`, `src/HarvestLoop.cpp`, `src/main.cpp`
 - **Tests:** 91 tests across 8 suites — all passing
 
+### 16. Gateway-as-AP Architecture
+- **Branch:** `feature/gateway-as-ap`
+- **Description:** Gateway runs a persistent WiFi AP (`ForestCam-GW-XXYY`, SSID derived from MAC). Leaves connect as STA clients instead of running their own APs. Eliminates WiFi hopping — gateway never disconnects from its own AP to connect to leaves.
+- **Key Changes:**
+  1. Gateway starts AP at boot and keeps it running permanently
+  2. Leaves derive gateway SSID from MAC (no SSID on wire in beacon v2)
+  3. Multiple leaves connect simultaneously (ESP32-S3 supports 4+ STA clients)
+  4. Gateway runs CoAP server on its AP for `/announce` endpoint
+  5. Gateway downloads from leaf STA IPs (not hardcoded 192.168.4.1)
+
+### 17. Beacon v2 Format
+- **Branch:** `feature/gateway-as-ap`
+- **Description:** Beacon format updated to v2 — no SSID transmitted on wire (derived from sender MAC as `ForestCam-GW-XXYY`). Fixed 15-byte beacon size. Version field 0x02 for backward compatibility detection.
+- **Key Changes:**
+  1. Beacon size reduced from 31 bytes to 15 bytes fixed
+  2. SSID removed from wire — receivers derive it from MAC
+  3. Version byte 0x02 allows receivers to detect old/new format
+  4. Backward compatible: old nodes ignored by version check
+
+### 18. main.cpp Refactor
+- **Branch:** `feature/gateway-as-ap`
+- **Description:** Monolithic `main.cpp` (1590 lines) split into 6 focused modules plus shared globals. Improves maintainability and compile times.
+- **Modules:**
+  - `src/TaskLoRaGateway.cpp` — Gateway LoRa task (beacons, election, harvest trigger)
+  - `src/TaskLoRaLeafRelay.cpp` — Leaf/relay LoRa task (beacons, election, sleep check)
+  - `src/TaskHarvestGateway.cpp` — Gateway harvest task (announce queue, CoAP download)
+  - `src/TaskCoapServer.cpp` — CoAP server task (image serving)
+  - `src/TaskRelayHarvest.cpp` — Relay store-and-forward task
+  - `include/Globals.h` — Shared globals, RTC variables, extern declarations
+- **Result:** `main.cpp` reduced to ~295 lines (setup + loop + OLED only)
+
+### 19. Comprehensive Test Suite
+- **Branch:** `feature/gateway-as-ap`
+- **Description:** Expanded test coverage to 17 suites with 152 test cases. Covers all major subsystems including announce flow, beacon v2, gateway-as-AP, election, deep sleep, and CoAP.
+- **Tests:** 152 tests across 17 suites — all passing
+
 ---
 
 ## In Progress
 
-### 14. Python Dashboard
+### 20. Python Dashboard
 - **Planned Branch:** `feature/dashboard`
 - **Description:** Laptop Python app using `aiocoap` + `tkinter` to pull and display images from gateway via CoAP.
 
-### 15. AES-128 LoRa Encryption
+### 21. AES-128 LoRa Encryption
 - **Status:** Not planned for current sprint
 - **Description:** Encrypt LoRa control-plane packets. Currently all packets are cleartext.
 
-### 16. Queue-Based / TDMA Scheduling
+### 22. Queue-Based / TDMA Scheduling
 - **Status:** Not planned for current sprint
 - **Description:** Replace sequential harvest with time-slotted or queue-based scheduling.
 
-### 17. ESP-Mesh-Lite Wi-Fi Mesh
+### 23. ESP-Mesh-Lite Wi-Fi Mesh
 - **Status:** Not planned — using simple AP/STA with AODV routing instead
 
 ---
@@ -208,5 +244,7 @@ coap-implemented
         └── feature/coap-optimization (5458b43) . [Done]
               └── feature/deep-sleep ............ [Done]
                     └── feature/auto-role ....... [Done]
-                          └── feature/dashboard . [Planned]
+                          └── feature/reactive-harvest .. [Done]
+                                └── feature/gateway-as-ap [Done]
+                                      └── feature/dashboard [Planned]
 ```

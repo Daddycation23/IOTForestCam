@@ -6,13 +6,16 @@ This feature replaces the single-threaded cooperative `loop()` with dedicated
 FreeRTOS tasks pinned to the ESP32-S3's dual cores. The critical improvement:
 **LoRa reception is no longer blocked during WiFi+CoAP harvest downloads.**
 
-| Core | Task | What it does |
-|------|------|-------------|
-| 0 | `taskLoRa` | LoRa RX/TX, beacon broadcast, AODV routing, election |
-| 1 | `taskHarvest` | WiFi connect + CoAP image download (gateway) |
-| 1 | `taskCoapServer` | CoAP Block2 image serving (leaf/relay) |
-| 1 | `taskRelayHarvest` | Relay store-and-forward (relay only) |
-| — | `loop()` | OLED display updates only |
+| Core | Task | Source File | What it does |
+|------|------|-------------|-------------|
+| 0 | `taskLoRaGateway` | `src/TaskLoRaGateway.cpp` | Gateway: LoRa RX/TX, beacon broadcast, AODV routing, election, harvest trigger |
+| 0 | `taskLoRaLeafRelay` | `src/TaskLoRaLeafRelay.cpp` | Leaf/Relay: LoRa RX/TX, beacon, election, deep sleep check (120s idle) |
+| 1 | `taskHarvestGateway` | `src/TaskHarvestGateway.cpp` | Gateway: polls announce queue, CoAP image download from leaf STA IPs |
+| 1 | `taskCoapServer` | `src/TaskCoapServer.cpp` | CoAP Block2 image serving (leaf/relay) + `/announce` endpoint (gateway) |
+| 1 | `taskRelayHarvest` | `src/TaskRelayHarvest.cpp` | Relay store-and-forward (relay only) |
+| — | `loop()` | `src/main.cpp` | OLED display updates only |
+
+**Note:** The gateway also runs `taskCoapServer` for the `/announce` endpoint — leaves POST their MAC + image count here on wake, which triggers the gateway harvest.
 
 ---
 
@@ -189,13 +192,39 @@ Stk L:1024 H:2048
 
 ---
 
-## Files Changed
+## Modular Task File Split
+
+As of the `feature/gateway-as-ap` branch, `main.cpp` has been refactored from ~1590 lines to ~295 lines. Task logic is now in dedicated source files:
+
+| File | Purpose |
+|------|---------|
+| `src/TaskLoRaGateway.cpp` | Gateway LoRa task (beacons, election, harvest trigger) |
+| `src/TaskLoRaLeafRelay.cpp` | Leaf/relay LoRa task (beacons, election, sleep check) |
+| `src/TaskHarvestGateway.cpp` | Gateway harvest task (announce queue, CoAP download) |
+| `src/TaskCoapServer.cpp` | CoAP server task (image serving + /announce) |
+| `src/TaskRelayHarvest.cpp` | Relay store-and-forward task |
+| `include/Globals.h` | Shared globals, RTC variables, extern declarations |
+
+### Leaf-Initiated Announce Flow
+
+Under the gateway-as-AP architecture, the harvest flow is announce-driven:
+
+1. Leaf wakes from 180s timer deep sleep
+2. Leaf connects as STA to gateway's persistent WiFi AP (`rtcGatewaySSID`)
+3. Leaf sends CoAP POST `/announce` (MAC + image count) to gateway
+4. Gateway's `taskCoapServer` receives announce, enqueues to `xAnnounceQueue`
+5. `taskHarvestGateway` dequeues announce, downloads images from leaf's STA IP
+6. Leaf returns to deep sleep after 120s idle timeout
+
+---
+
+## Files Changed (Original FreeRTOS Split)
 
 | File | Change |
 |------|--------|
-| `include/TaskConfig.h` | NEW — Task config, FreeRTOS handle declarations |
-| `src/TaskConfig.cpp` | NEW — `initRTOS()`, thread-safe LoRa/registry helpers |
-| `src/main.cpp` | Extracted loop bodies into FreeRTOS task functions |
+| `include/TaskConfig.h` | Task config, FreeRTOS handle declarations |
+| `src/TaskConfig.cpp` | `initRTOS()`, thread-safe LoRa/registry helpers |
+| `src/main.cpp` | Setup + loop (OLED only); task bodies moved to dedicated files |
 | `src/HarvestLoop.cpp` | Mutex-guarded LoRa + registry access, `vTaskDelay()` |
 | `src/ElectionManager.cpp` | Thread-safe LoRa TX via `loraSendSafe()` |
 | `src/AodvRouter.cpp` | Thread-safe `_broadcast()` via `loraSendSafe()` |
