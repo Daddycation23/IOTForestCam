@@ -30,13 +30,13 @@
 
 ### 5. LoRa Beacon Discovery
 - **Branch:** `coap-implemented`
-- **Description:** 31-byte beacon packets broadcast every 30s with jitter. Contains MAC, role, SSID, image count, battery level.
+- **Description:** 15-byte v2 beacon packets broadcast every 30s with jitter. Contains MAC, role, image count, battery level. SSID derived from MAC (see Feature 17).
 - **Key Files:** `src/LoRaBeacon.cpp`, `include/LoRaBeacon.h`
 
 ### 6. Multi-Hop Harvest via Relay
 - **Branch:** `coap-implemented`
 - **Description:** Gateway commands relay over LoRa to fetch images from out-of-range leaf. Store-and-forward with HARVEST_CMD/HARVEST_ACK protocol.
-- **Key Files:** `src/HarvestLoop.cpp`, `include/AodvPacket.h`
+- **Key Files:** `src/TaskRelayHarvest.cpp`, `src/HarvestLoop.cpp`, `include/AodvPacket.h`
 
 ### 7. Data Integrity (Fletcher-16)
 - **Branch:** `coap-implemented`
@@ -233,6 +233,18 @@ The SX1280 LoRa (2.4 GHz with PA) has significantly longer range than the ESP32-
 - Auto-relay promotion: after N consecutive WiFi failures, broadcast HARVEST_CMD to other nodes to attempt relay harvest
 - RSSI-based range estimation: if beacon RSSI is weak, preemptively try relay path
 - Increase WiFi TX power from `WIFI_POWER_8_5dBm` to `WIFI_POWER_19_5dBm` (higher power consumption)
+
+---
+
+## Future Work
+
+### Self-Healing Relay Fallback
+
+The current star topology relies on leaves connecting directly to the gateway's WiFi AP. If a leaf is out of WiFi range (but still within LoRa range), it fails to connect and goes back to sleep without transferring images. The AODV routing layer on LoRa knows which nodes need multi-hop paths, but this information is only used when the gateway proactively assigns relay harvests — not when a direct WiFi connection fails.
+
+**Proposed improvement:** When a leaf fails its STA connection to the gateway (25s timeout), instead of sleeping immediately, it falls back to AP mode and stays awake. The gateway, which continues to receive the leaf's LoRa beacons, detects that the node has images but hasn't announced. It then sends a HARVEST_CMD to a nearby relay, which fetches the images from the leaf's AP and forwards them to the gateway.
+
+Most of the relay infrastructure already exists (HARVEST_CMD, store-and-forward, HARVEST_ACK). The missing piece is the gateway logic to trigger relay harvest for nodes that are LoRa-reachable but WiFi-unreachable.
 
 ---
 

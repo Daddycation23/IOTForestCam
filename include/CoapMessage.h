@@ -129,7 +129,7 @@ struct CoapOption {
 // Block option encoding:
 //   value = (NUM << 4) | (M << 3) | SZX
 //   Block size = 2^(SZX + 4) bytes
-//   SZX=5 → 512 bytes (matches our StorageReader block size)
+//   SZX=6 → 1024 bytes (matches our StorageReader block size)
 //
 
 struct Block2Info {
