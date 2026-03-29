@@ -157,7 +157,14 @@ The disadvantages identified in previous research lead to the objectives of this
 
 \subsection{Overall System Architecture}
 
-The system employs a decoupled, dual-radio hybrid architecture designed specifically for off-grid forest environments. The network is divided into two distinct operational planes: a low-power ``Control Plane'' for asynchronous wake-ups and a high-bandwidth ``Data Plane'' for payload routing.
+The system employs a \changed{star-mesh hybrid} architecture designed specifically for off-grid forest environments. The network is divided into two distinct operational planes that use different topologies:
+
+\changed{
+\begin{itemize}
+    \item \textbf{Control Plane (LoRa --- Mesh topology):} All nodes broadcast beacons and routing packets over LoRa 2.4~GHz, forming a mesh-like network where every node within radio range can hear every other node. AODV reactive routing discovers multi-hop paths, and a Bully election algorithm selects the gateway. This plane handles node discovery, route management, election, and relay coordination.
+    \item \textbf{Data Plane (Wi-Fi --- Star topology):} The gateway runs a persistent Wi-Fi access point. Leaf nodes connect as station (STA) clients to transfer images via CoAP. All data flows through the central gateway AP, forming a star topology. For out-of-range leaves, a relay node performs sequential store-and-forward between the leaf's AP and the gateway's AP.
+\end{itemize}
+This separation allows the long-range, low-power LoRa mesh to coordinate the network while the short-range, high-bandwidth Wi-Fi star handles bulk image transfer. The result is a practical compromise: mesh-level resilience for control (election failover, multi-hop discovery) with star-level simplicity and throughput for data.}
 
 \subsection{Hardware and Devices}
 

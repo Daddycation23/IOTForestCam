@@ -222,6 +222,20 @@
 
 ---
 
+## Network Topology: Star-Mesh Hybrid
+
+The system uses a **star-mesh hybrid** architecture with two distinct planes:
+
+- **Control Plane (LoRa — Mesh):** All nodes broadcast beacons and AODV routing packets over LoRa 2.4 GHz. Every node within radio range (~200-800m in forest) can hear every other node, forming a mesh. This plane handles node discovery, multi-hop route management, Bully election for gateway failover, and relay coordination via HARVEST_CMD/ACK.
+
+- **Data Plane (WiFi — Star):** The gateway runs a persistent WiFi AP (`ForestCam-GW-XXYY`). Leaf nodes connect as STA clients to transfer images via CoAP Block2. All image data flows through the central gateway, forming a star. For leaves out of WiFi range, a relay performs sequential store-and-forward (STA to leaf → cache → STA to gateway).
+
+**Why this design:** LoRa has long range but low throughput (~1 KB/s) — good for small control packets. WiFi has short range but high throughput (~3-10 KB/s) — good for image data. The star-mesh hybrid uses each radio for what it does best. The LoRa mesh provides resilience (election failover, multi-hop discovery) while the WiFi star provides throughput and simplicity for bulk transfers.
+
+**Trade-offs vs full mesh:** A full WiFi mesh would allow data to flow through arbitrary multi-hop paths, but relay nodes would need to stay awake (kills battery) and throughput halves per hop. The star topology is simpler, more power-efficient, and sufficient for 3-8 node deployments within relay range.
+
+---
+
 ## Known Limitations
 
 ### LoRa-Reachable but WiFi-Unreachable Nodes

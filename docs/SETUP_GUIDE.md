@@ -4,7 +4,7 @@ Consolidated setup and configuration reference for the ForestCam mesh camera net
 
 **Hardware**: LILYGO T3-S3 V1.2 (ESP32-S3 + SX1280 2.4 GHz LoRa PA)
 **Framework**: Arduino via PlatformIO
-**Architecture**: FreeRTOS dual-core, gateway-as-AP WiFi topology
+**Architecture**: FreeRTOS dual-core, star-mesh hybrid (LoRa mesh control plane + WiFi star data plane)
 
 ---
 
