@@ -234,6 +234,14 @@ The system uses a **star-mesh hybrid** architecture with two distinct planes:
 
 **Trade-offs vs full mesh:** A full WiFi mesh would allow data to flow through arbitrary multi-hop paths, but relay nodes would need to stay awake (kills battery) and throughput halves per hop. The star topology is simpler, more power-efficient, and sufficient for 3-8 node deployments within relay range.
 
+**Assumptions this topology operates under:**
+1. All leaf nodes are within WiFi range (~50-100m) of either the gateway or a relay node. Nodes beyond WiFi range of both cannot transfer images — LoRa reaches further but carries only control packets.
+2. One gateway is sufficient. ESP32 SoftAP supports ~4 simultaneous STA clients. The 180s sleep timer with MAC-based jitter staggers wake times to avoid exceeding this limit.
+3. Sequential harvest is acceptable. The gateway downloads from one leaf at a time (~10-20s each). For 3-8 nodes this means ~30-60s per cycle.
+4. Image latency of 180s+ is tolerable. Images are at most one sleep cycle stale. The system does not provide real-time streaming.
+5. Relay nodes are pre-positioned within WiFi range of both the out-of-range leaf and the gateway. The system discovers relays via AODV but does not dynamically reposition them.
+6. The gateway has reliable power (USB or mains). It never sleeps. A battery-powered gateway would require architectural changes.
+
 ---
 
 ## Known Limitations
