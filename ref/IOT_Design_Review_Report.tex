@@ -239,6 +239,41 @@ The system is prototyped using a modular, staggered approach to isolate hardware
     \item \textbf{Gateway Dashboard:} The local gateway interface will be built using Python on a diagnostic laptop, utilizing standard UDP socket libraries to capture incoming CoAP packets and reconstruct the binary data into JPEG images. \changed{This remains planned for a future iteration.}
 \end{enumerate}
 
+\subsection{Implementation Parameters}
+
+\changed{Table~\ref{tab:impl-params} summarises the key library versions, radio configuration, and CoAP transfer parameters used in the current prototype build. All values are defined as compile-time constants in the project header files and \texttt{platformio.ini}.}
+
+\begin{table}[ht]
+\centering
+\caption{\changed{Implementation parameters for the current prototype build.}}
+\label{tab:impl-params}
+\begin{tabular}{@{}llr@{}}
+\toprule
+\textbf{Category} & \textbf{Parameter} & \textbf{Value} \\
+\midrule
+\multicolumn{3}{@{}l}{\textit{Library Dependencies}} \\
+ & RadioLib          & 6.6.0 \\
+ & Adafruit SSD1306  & 2.5.7 \\
+ & Adafruit GFX      & 1.11.5 \\
+\midrule
+\multicolumn{3}{@{}l}{\textit{LoRa Radio Configuration (SX1280, 2.4\,GHz ISM)}} \\
+ & Centre Frequency  & 2400.0\,MHz \\
+ & Spreading Factor  & 9 \\
+ & Bandwidth         & 812.5\,kHz \\
+ & Coding Rate       & 4/7 \\
+ & TX Power          & 10\,dBm \\
+ & Preamble Length   & 12 symbols \\
+\midrule
+\multicolumn{3}{@{}l}{\textit{CoAP Transfer Parameters}} \\
+ & Block2 SZX        & 6 (1024\,B) \\
+ & Pipelining Window & 3 \\
+ & ACK Timeout       & 2000\,ms \\
+ & Max Retries       & 3 \\
+ & Default Port      & 5683 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 \subsection{Deployment Strategy, Challenges, and Mitigation}
 
 The prototype is deployed in a phased manner. Initial bench-testing occurs in a laboratory environment to verify logical routing. Subsequent field testing will be conducted in a simulated off-grid environment.
