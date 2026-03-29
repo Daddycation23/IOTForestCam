@@ -16,7 +16,7 @@ ElectionManager::ElectionManager(LoRaRadio& radio, NodeRegistry& registry,
       _state(ELECT_IDLE), _stateEnteredMs(0), _electionId(0),
       _currentElectionId(0), _bootMs(0), _graceEndMs(0), _lastGatewayBeaconMs(0), _gatewayEverSeen(false),
       _txRemaining(0), _lastTxMs(0), _txGapMs(0), _txLen(0),
-      _backoffMs(0), _cooldownUntilMs(0)
+      _backoffMs(0), _cooldownUntilMs(0), _sentSuppressDuringElection(false)
 {
     memset(_mac, 0, 6);
     memset(_txBuf, 0, sizeof(_txBuf));
@@ -33,6 +33,7 @@ void ElectionManager::begin(const uint8_t mac[6], NodeRole originalRole, bool ga
     _graceEndMs   = _bootMs + ELECTION_STARTUP_GRACE_MS + jitter;
     _state        = ELECT_IDLE;
     _stateEnteredMs = millis();
+    _sentSuppressDuringElection = false;
 
     // On timer wake, restore gateway knowledge from RTC to skip unnecessary election.
     // The node will still detect gateway timeout (90s) if the gateway is truly gone.
@@ -124,6 +125,7 @@ void ElectionManager::onElectionPacket(const uint8_t* buf, uint8_t len) {
 
             if (iAmHigher) {
                 Serial.printf("[%s] Suppressing lower-priority candidate\n", TAG);
+                _sentSuppressDuringElection = true;
                 _sendElectionPacket(PKT_TYPE_SUPPRESS, ELECTION_TX_REPEAT, ELECTION_TX_GAP_MS);
 
                 // If we're already the acting gateway, also send COORDINATOR
@@ -206,6 +208,12 @@ void ElectionManager::onElectionPacket(const uint8_t* buf, uint8_t len) {
                     Serial.printf("[%s] Coordinator announced — returning to IDLE\n", TAG);
                     _cooldownUntilMs = millis() + ELECTION_RECLAIM_COOLDOWN_MS;
                     _enterState(ELECT_IDLE);
+
+                    // Auto-relay: if we suppressed others but lost, we're middle priority → RELAY
+                    if (_sentSuppressDuringElection) {
+                        _promoteToRelay();
+                    }
+                    _sentSuppressDuringElection = false;
                 } else {
                     Serial.printf("[%s] Coordinator noted — gateway exists\n", TAG);
                 }
@@ -247,6 +255,7 @@ void ElectionManager::_tickIdle() {
     if (!_gatewayEverSeen) {
         Serial.printf("[%s] Grace period expired, no gateway — starting election\n", TAG);
         rtcGatewayKnown = false;  // Clear stale RTC state for next wake
+        _sentSuppressDuringElection = false;
         _electionId++;
         _currentElectionId = _electionId;
         _enterState(ELECT_ELECTION_START);
@@ -261,6 +270,7 @@ void ElectionManager::_tickIdle() {
             Serial.printf("[%s] Gateway timeout (stagger=%lu ms) — starting election\n",
                           TAG, stagger);
             rtcGatewayKnown = false;  // Clear stale RTC state for next wake
+            _sentSuppressDuringElection = false;
             _electionId++;
             _currentElectionId = _electionId;
             _enterState(ELECT_ELECTION_START);
@@ -355,9 +365,17 @@ void ElectionManager::_promoteToGateway() {
     Serial.printf("[%s] ║  PROMOTED TO ACTING GATEWAY      ║\n", TAG);
     Serial.printf("[%s] ╚══════════════════════════════════╝\n\n", TAG);
 
-    _activeRole = NODE_ROLE_GATEWAY;
+    _activeRole.store(NODE_ROLE_GATEWAY);
     _registry.reset();
     _harvest.abortCycle();
+}
+
+void ElectionManager::_promoteToRelay() {
+    Serial.printf("\n[%s] ╔══════════════════════════════════╗\n", TAG);
+    Serial.printf("[%s] ║  AUTO-PROMOTED TO RELAY          ║\n", TAG);
+    Serial.printf("[%s] ╚══════════════════════════════════╝\n\n", TAG);
+
+    _activeRole.store(NODE_ROLE_RELAY);
 }
 
 void ElectionManager::_demoteToLeaf() {
@@ -367,7 +385,8 @@ void ElectionManager::_demoteToLeaf() {
 
     _harvest.abortCycle();
     _registry.reset();
-    _activeRole = NODE_ROLE_LEAF;
+    _activeRole.store(NODE_ROLE_LEAF);
+    _sentSuppressDuringElection = false;
 }
 
 const char* ElectionManager::stateStr() const {

@@ -195,8 +195,8 @@ void relayHarvest(const HarvestCmdPacket& cmd) {
 
             if (cachedStorage.beginScanOnly()) {
                 if (cachedCoapServer.begin()) {
-                    _relayCachedServing = true;
                     _relayCachedStartMs = millis();
+                    _relayCachedServing = true;
                     Serial.printf("[Relay] Serving %u cached image(s) via CoAP on gateway network\n",
                                   cachedStorage.imageCount());
                     Serial.println("[Relay] Harvest command complete — waiting for gateway download\n");

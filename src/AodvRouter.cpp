@@ -28,10 +28,15 @@ AodvRouter::AodvRouter(LoRaRadio& radio)
     , _routeDiscoveredCb(nullptr)
     , _isRelaying(false)
     , _relayingForCount(0)
+    , _routeMutex(nullptr)
+    , _pendingBroadcast(false)
+    , _pendingLen(0)
+    , _pendingSendMs(0)
 {
     memset(_myId, 0, 6);
     memset(_routes, 0, sizeof(_routes));
     memset(_rreqCache, 0, sizeof(_rreqCache));
+    memset(_pendingBuf, 0, sizeof(_pendingBuf));
 }
 
 void AodvRouter::begin(const uint8_t myId[6]) {
@@ -39,6 +44,7 @@ void AodvRouter::begin(const uint8_t myId[6]) {
     _mySeqNum = 1;
     _rreqIdCounter = 0;
     _initialized = true;
+    _routeMutex = xSemaphoreCreateMutex();
 
     // Clear route table
     for (uint8_t i = 0; i < AODV_MAX_ROUTES; i++) {
@@ -66,7 +72,7 @@ void AodvRouter::tick() {
 
     // ── Expire stale routes ─────────────────────────────────
     for (uint8_t i = 0; i < AODV_MAX_ROUTES; i++) {
-        if (_routes[i].active && now >= _routes[i].expiryMs) {
+        if (_routes[i].active && (now - _routes[i].createdMs) >= _routes[i].lifetimeMs) {
             char idStr[24];
             snprintf(idStr, sizeof(idStr), "%02X:%02X:%02X:%02X:%02X:%02X",
                      _routes[i].destId[0], _routes[i].destId[1], _routes[i].destId[2],
@@ -96,6 +102,13 @@ void AodvRouter::tick() {
                  _discoveryDestId[3], _discoveryDestId[4], _discoveryDestId[5]);
         Serial.printf("[%s] Route discovery TIMEOUT for %s\n", TAG, idStr);
         _discoveryPending = false;
+    }
+
+    // ── Send deferred broadcast (replaces blocking vTaskDelay) ──
+    if (_pendingBroadcast && (now - _pendingSendMs) < 10000 &&
+        now >= _pendingSendMs) {
+        _broadcast(_pendingBuf, _pendingLen);
+        _pendingBroadcast = false;
     }
 }
 
@@ -164,9 +177,8 @@ void AodvRouter::handleRREQ(const RreqPacket& rreq, float rssi) {
         uint8_t buf[64];
         uint8_t len = rrep.serialize(buf, sizeof(buf));
         if (len > 0) {
-            // Small random delay to avoid collision with other responders
-            vTaskDelay(pdMS_TO_TICKS(random(AODV_RREQ_BACKOFF_MIN, AODV_RREQ_BACKOFF_MAX)));
-            _broadcast(buf, len);
+            // Deferred send to avoid blocking Core 0
+            _deferBroadcast(buf, len, random(AODV_RREQ_BACKOFF_MIN, AODV_RREQ_BACKOFF_MAX));
         }
         return;
     }
@@ -211,8 +223,7 @@ void AodvRouter::handleRREQ(const RreqPacket& rreq, float rssi) {
     uint8_t buf[64];
     uint8_t len = fwd.serialize(buf, sizeof(buf));
     if (len > 0) {
-        vTaskDelay(pdMS_TO_TICKS(random(AODV_RREQ_BACKOFF_MIN, AODV_RREQ_BACKOFF_MAX)));
-        _broadcast(buf, len);
+        _deferBroadcast(buf, len, random(AODV_RREQ_BACKOFF_MIN, AODV_RREQ_BACKOFF_MAX));
         Serial.printf("[%s] RREQ rebroadcast (hops=%u)\n", TAG, newHopCount);
     }
 }
@@ -452,26 +463,33 @@ void AodvRouter::notifyLinkBreak(const uint8_t brokenNodeId[6]) {
 // Route Table Queries
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-bool AodvRouter::hasRoute(const uint8_t destId[6]) const {
-    return _findRoute(destId) >= 0;
+bool AodvRouter::hasRoute(const uint8_t destId[6]) {
+    if (_routeMutex) xSemaphoreTake(_routeMutex, pdMS_TO_TICKS(100));
+    bool found = _findRoute(destId) >= 0;
+    if (_routeMutex) xSemaphoreGive(_routeMutex);
+    return found;
 }
 
-bool AodvRouter::getRoute(const uint8_t destId[6], RouteEntry& route) const {
+bool AodvRouter::getRoute(const uint8_t destId[6], RouteEntry& route) {
+    if (_routeMutex) xSemaphoreTake(_routeMutex, pdMS_TO_TICKS(100));
     int8_t idx = _findRoute(destId);
-    if (idx < 0) return false;
-    route = _routes[idx];
-    return true;
+    bool ok = (idx >= 0);
+    if (ok) route = _routes[idx];
+    if (_routeMutex) xSemaphoreGive(_routeMutex);
+    return ok;
 }
 
-uint8_t AodvRouter::routeCount() const {
+uint8_t AodvRouter::routeCount() {
+    if (_routeMutex) xSemaphoreTake(_routeMutex, pdMS_TO_TICKS(100));
     uint8_t count = 0;
     for (uint8_t i = 0; i < AODV_MAX_ROUTES; i++) {
         if (_routes[i].active) count++;
     }
+    if (_routeMutex) xSemaphoreGive(_routeMutex);
     return count;
 }
 
-void AodvRouter::dumpRoutes() const {
+void AodvRouter::dumpRoutes() {
     Serial.println("┌──────────────────────────────────────────────────────────────────────────────┐");
     Serial.println("│  AODV Routing Table                                                          │");
     Serial.println("├────┬───────────────────┬───────────────────┬──────┬────────┬─────────┬───────┤");
@@ -490,7 +508,8 @@ void AodvRouter::dumpRoutes() const {
                  _routes[i].nextHopId[0], _routes[i].nextHopId[1], _routes[i].nextHopId[2],
                  _routes[i].nextHopId[3], _routes[i].nextHopId[4], _routes[i].nextHopId[5]);
 
-        uint32_t remainMs = (_routes[i].expiryMs > now) ? (_routes[i].expiryMs - now) / 1000 : 0;
+        uint32_t elapsed = now - _routes[i].createdMs;
+        uint32_t remainMs = (elapsed < _routes[i].lifetimeMs) ? (_routes[i].lifetimeMs - elapsed) / 1000 : 0;
 
         Serial.printf("│ %u  │ %s │ %s │  %2u  │ %5u  │  %5lu  │  %s  │\n",
                        i, destStr, nextStr,
@@ -527,8 +546,8 @@ int8_t AodvRouter::_findOldestRouteSlot() const {
     int8_t oldest = -1;
     uint32_t oldestExpiry = UINT32_MAX;
     for (uint8_t i = 0; i < AODV_MAX_ROUTES; i++) {
-        if (_routes[i].active && _routes[i].expiryMs < oldestExpiry) {
-            oldestExpiry = _routes[i].expiryMs;
+        if (_routes[i].active && _routes[i].createdMs < oldestExpiry) {
+            oldestExpiry = _routes[i].createdMs;
             oldest = i;
         }
     }
@@ -550,8 +569,9 @@ void AodvRouter::_upsertRoute(const uint8_t destId[6], const uint8_t nextHopId[6
             r.destSeqNum  = destSeqNum;
             r.validSeqNum = true;
         }
-        // Always refresh lifetime
-        r.expiryMs = millis() + (uint32_t)lifetimeSec * 1000;
+        // Always refresh lifetime (wraparound-safe)
+        r.createdMs  = millis();
+        r.lifetimeMs = (uint32_t)lifetimeSec * 1000;
         return;
     }
 
@@ -568,7 +588,8 @@ void AodvRouter::_upsertRoute(const uint8_t destId[6], const uint8_t nextHopId[6
     memcpy(r.nextHopId, nextHopId, 6);
     r.hopCount    = hopCount;
     r.destSeqNum  = destSeqNum;
-    r.expiryMs    = millis() + (uint32_t)lifetimeSec * 1000;
+    r.createdMs   = millis();
+    r.lifetimeMs  = (uint32_t)lifetimeSec * 1000;
     r.active      = true;
     r.validSeqNum = true;
     r.relayed     = false;
@@ -628,6 +649,14 @@ void AodvRouter::_expireRreqCache() {
 void AodvRouter::_broadcast(const uint8_t* data, uint8_t len) {
     loraSendSafe(data, len);
     loraStartReceiveSafe();
+}
+
+void AodvRouter::_deferBroadcast(const uint8_t* data, uint8_t len, uint32_t delayMs) {
+    if (len > sizeof(_pendingBuf)) return;
+    memcpy(_pendingBuf, data, len);
+    _pendingLen = len;
+    _pendingSendMs = millis() + delayMs;
+    _pendingBroadcast = true;
 }
 
 bool AodvRouter::_isSelf(const uint8_t id[6]) const {

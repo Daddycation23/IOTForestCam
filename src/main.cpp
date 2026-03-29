@@ -118,6 +118,7 @@ void setup() {
     display.setTextColor(SSD1306_WHITE);
 
     // ── Fast-path wake: skip role menu if woken by timer or LoRa ─
+    bool manualOverride = false;  // hoisted above goto to avoid jumping over initialisation
     if (DeepSleepManager::wasWokenByTimer() || DeepSleepManager::wasWokenByLoRa()) {
         gpio_hold_dis(GPIO_NUM_21);
         gpio_hold_dis(GPIO_NUM_10);
@@ -152,7 +153,7 @@ normal_boot:
             delay(2000);
         }
 
-        bool manualOverride = false;
+        manualOverride = false;
         g_role = RoleConfig::determineRole(display, manualOverride);
         Serial.printf("\n[Role] Booting as: %s (%s)\n\n",
                       RoleConfig::roleName(g_role),
@@ -196,6 +197,30 @@ normal_boot:
 void loop() {
     serialCmd.tick();
     _activeRole = electionMgr.activeRole();
+
+    // ── Detect runtime role change from election ─────────────
+    NodeRole newRole = static_cast<NodeRole>(_activeRole.load());
+    if (newRole != g_role) {
+        NodeRole oldRole = g_role;
+        g_role = newRole;
+        Serial.printf("[Main] Role changed: %s -> %s\n",
+                      RoleConfig::roleName(oldRole), RoleConfig::roleName(newRole));
+
+        // Runtime relay initialization
+        if (newRole == NODE_ROLE_RELAY && oldRole == NODE_ROLE_LEAF) {
+            Serial.println("[Main] Initializing relay capabilities...");
+            SD.mkdir("/cached");
+
+            // Create relay harvest task if not already running
+            static bool relayTaskCreated = false;
+            if (!relayTaskCreated) {
+                xTaskCreatePinnedToCore(taskRelayHarvest, "Relay_H", STACK_HARVEST,
+                                        nullptr, PRIORITY_HARVEST, &hTaskRelayHarvest, CORE_NETWORK);
+                relayTaskCreated = true;
+                Serial.println("[Main] Relay harvest task created");
+            }
+        }
+    }
 
     // ── OLED Update (every 2 s) ──────────────────────────────
     static uint32_t lastDisplayMs = 0;

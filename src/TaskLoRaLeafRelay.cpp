@@ -73,12 +73,12 @@ void taskLoRaLeafRelay(void* param) {
             WiFi.macAddress(beacon.nodeId);
             if (electionMgr.isPromoted()) {
                 beacon.nodeRole = NODE_ROLE_GATEWAY;
-            } else if (g_role == NODE_ROLE_RELAY || aodvRouter.isRelaying()) {
+            } else if (g_role == NODE_ROLE_RELAY || _activeRole.load() == NODE_ROLE_RELAY || aodvRouter.isRelaying()) {
                 beacon.nodeRole = NODE_ROLE_RELAY;
             } else {
                 beacon.nodeRole = NODE_ROLE_LEAF;
             }
-            beacon.imageCount = (g_role == NODE_ROLE_RELAY && _relayCachedServing)
+            beacon.imageCount = ((g_role == NODE_ROLE_RELAY || _activeRole.load() == NODE_ROLE_RELAY) && _relayCachedServing)
                                     ? cachedStorage.imageCount()
                                     : storage.imageCount();
             beacon.deriveSsid();  // Populate ssid from MAC for logging
@@ -110,7 +110,7 @@ void taskLoRaLeafRelay(void* param) {
                         electionMgr.onBeacon(received);
 
                         // Only relay/promoted nodes do registry update and beacon forwarding
-                        if (g_role == NODE_ROLE_RELAY || electionMgr.isPromoted()) {
+                        if (g_role == NODE_ROLE_RELAY || _activeRole.load() == NODE_ROLE_RELAY || electionMgr.isPromoted()) {
                             uint8_t myMac[6];
                             WiFi.macAddress(myMac);
 
@@ -172,7 +172,7 @@ void taskLoRaLeafRelay(void* param) {
 
                 case PKT_TYPE_HARVEST_CMD: {
                     // Relay only: forward to Core 1 via queue
-                    if (g_role == NODE_ROLE_RELAY) {
+                    if (g_role == NODE_ROLE_RELAY || _activeRole.load() == NODE_ROLE_RELAY) {
                         if (pendingCmd.parse(rx.data, rx.length)) {
                             uint8_t myMac[6];
                             WiFi.macAddress(myMac);

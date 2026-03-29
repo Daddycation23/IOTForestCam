@@ -12,7 +12,7 @@
 
 #include "HarvestLoop.h"
 #include "TaskConfig.h"
-#include "DeepSleepManager.h"   // rtcBootCount
+#include "DeepSleepManager.h"   // rtcBootCount, saveResumeState, clearResumeState
 
 // Access global _apSSID for AP restore after relay harvest
 extern char _apSSID[32];
@@ -41,6 +41,7 @@ HarvestLoop::HarvestLoop(NodeRegistry& registry, CoapClient& coapClient)
 {
     _stats.reset();
     memset(_relaySSID, 0, sizeof(_relaySSID));
+    _relayAckMux = xSemaphoreCreateMutex();
 }
 
 void HarvestLoop::setAodv(AodvRouter* router, LoRaRadio* radio) {
@@ -63,10 +64,10 @@ void HarvestLoop::startCycle() {
 
 void HarvestLoop::onHarvestAck(const HarvestAckPacket& ack) {
     if (_state == HARVEST_RELAY_WAIT && ack.cmdId == _pendingCmdId) {
-        portENTER_CRITICAL(&_relayAckMux);
+        xSemaphoreTake(_relayAckMux, portMAX_DELAY);
         _lastRelayAck = ack;
         _relayAckReceived = true;
-        portEXIT_CRITICAL(&_relayAckMux);
+        xSemaphoreGive(_relayAckMux);
         Serial.printf("[%s] Relay ACK received: status=%s, images=%u\n",
                       TAG, HarvestAckPacket::statusToString(ack.status), ack.imageCount);
     }
@@ -465,9 +466,9 @@ void HarvestLoop::_doRelayCmd() {
                       TAG, _relaySSID, _currentNode.ssid, _pendingCmdId);
     }
 
-    portENTER_CRITICAL(&_relayAckMux);
+    xSemaphoreTake(_relayAckMux, portMAX_DELAY);
     _relayAckReceived = false;
-    portEXIT_CRITICAL(&_relayAckMux);
+    xSemaphoreGive(_relayAckMux);
     _relayHarvesting = true;
     _enterState(HARVEST_RELAY_WAIT);
 }
@@ -480,12 +481,12 @@ void HarvestLoop::_doRelayWait() {
     // Check if ACK received (set by onHarvestAck callback on another core)
     HarvestAckPacket localAck;
     bool ackReceived = false;
-    portENTER_CRITICAL(&_relayAckMux);
+    xSemaphoreTake(_relayAckMux, portMAX_DELAY);
     if (_relayAckReceived) {
         ackReceived = true;
         localAck = _lastRelayAck;
     }
-    portEXIT_CRITICAL(&_relayAckMux);
+    xSemaphoreGive(_relayAckMux);
 
     if (ackReceived) {
         if (localAck.status == HARVEST_STATUS_OK && localAck.imageCount > 0) {
@@ -605,12 +606,28 @@ void HarvestLoop::_doDownload() {
         SD.mkdir(HARVEST_SAVE_DIR);
     }
 
+    // ── Check for resumable transfer from a previous interrupted session ──
+    uint8_t startImageIdx = 0;
+    DownloadResumeState resumeState = {};
+    bool hasResume = false;
+
+    if (rtcResumeValid && memcmp(rtcResumeNodeId, _currentNode.nodeId, 6) == 0) {
+        startImageIdx = rtcResumeImageIdx;
+        resumeState.startBlock   = rtcResumeBlock;
+        resumeState.sum1         = rtcResumeSum1;
+        resumeState.sum2         = rtcResumeSum2;
+        resumeState.bytesWritten = rtcResumeTotalBytes;
+        hasResume = true;
+        Serial.printf("[%s] Resuming transfer for image %u from block %u (%u bytes on disk)\n",
+                      TAG, startImageIdx, rtcResumeBlock, rtcResumeTotalBytes);
+    }
+
     // ── Download each image ─────────────────────────────
     bool sdAvailable = SD.exists(HARVEST_SAVE_DIR);
     uint8_t passCount = 0;
     uint8_t failCount = 0;
 
-    for (uint8_t i = 0; i < imageCount; i++) {
+    for (uint8_t i = startImageIdx; i < imageCount; i++) {
         Serial.printf("  === Download /image/%u ===\n", i);
 
         char outPath[96];
@@ -626,7 +643,17 @@ void HarvestLoop::_doDownload() {
         }
 
         TransferStats stats;
-        err = _coapClient.downloadImagePipelined(leafIP, leafPort, i, savePath, stats);
+        const DownloadResumeState* resumePtr = nullptr;
+        if (hasResume && i == startImageIdx && resumeState.startBlock > 0) {
+            resumePtr = &resumeState;
+        }
+        err = _coapClient.downloadImagePipelined(leafIP, leafPort, i, savePath, stats, resumePtr);
+
+        // Clear resume after first attempt (whether success or failure)
+        if (hasResume && i == startImageIdx) {
+            hasResume = false;
+            DeepSleepManager::clearResumeState();
+        }
 
         if (err == COAP_CLIENT_OK) {
             Serial.printf("    Bytes: %lu | Blocks: %lu | Time: %lu ms | Speed: %.1f KB/s\n",
@@ -659,8 +686,20 @@ void HarvestLoop::_doDownload() {
             _stats.totalImages++;
         } else {
             Serial.printf("    [ERROR] Download failed: %s\n\n", coapClientErrorStr(err));
-            // Remove partial/corrupt file from SD
-            if (savePath && SD.exists(savePath)) {
+            // Save resume state for next wake cycle
+            if (_coapClient.lastCompletedBlock() > 0) {
+                DeepSleepManager::saveResumeState(
+                    _currentNode.nodeId, i,
+                    _coapClient.lastCompletedBlock(),
+                    _coapClient.currentSum1(),
+                    _coapClient.currentSum2(),
+                    savePath,
+                    stats.totalBytes);
+                Serial.printf("[%s] Resume state saved: image %u, block %u, %u bytes\n",
+                              TAG, i, _coapClient.lastCompletedBlock(), stats.totalBytes);
+            }
+            // Remove partial/corrupt file from SD only if no resume state saved
+            if (_coapClient.lastCompletedBlock() == 0 && savePath && SD.exists(savePath)) {
                 SD.remove(savePath);
                 Serial.printf("    Removed partial file: %s\n", savePath);
             }
@@ -675,6 +714,7 @@ void HarvestLoop::_doDownload() {
 
     if (failCount == 0) {
         _stats.nodesSucceeded++;
+        DeepSleepManager::clearResumeState();
     } else {
         _stats.nodesFailed++;
     }

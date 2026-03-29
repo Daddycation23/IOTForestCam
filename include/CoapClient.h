@@ -91,6 +91,16 @@ static constexpr uint8_t  COAP_CLIENT_MAX_RETRIES = 3;
 static constexpr uint32_t COAP_CLIENT_TIMEOUT_MS  = 2000;    // Reduced: local WiFi is fast
 static constexpr uint8_t  COAP_CLIENT_WINDOW_SIZE = 3;       // Pipeline: outstanding requests
 
+// ─── Download Resume State ─────────────────────────────────
+
+/** State needed to resume a partially completed Block2 download. */
+struct DownloadResumeState {
+    uint32_t startBlock;     // Block number to resume from
+    uint16_t sum1;           // Fletcher-16 partial accumulator (low)
+    uint16_t sum2;           // Fletcher-16 partial accumulator (high)
+    uint32_t bytesWritten;   // Bytes already on disk
+};
+
 // ─── CoapClient Class ──────────────────────────────────────
 
 class CoapClient {
@@ -177,8 +187,23 @@ public:
                                             const char* outputPath,
                                             TransferStats& stats);
 
+    /**
+     * Download an image with optional resume from a previous partial transfer.
+     * If resume is non-null, opens file in append mode and starts from resume->startBlock.
+     */
+    CoapClientError downloadImagePipelined(IPAddress serverIP, uint16_t serverPort,
+                                            uint8_t imageIndex,
+                                            const char* outputPath,
+                                            TransferStats& stats,
+                                            const DownloadResumeState* resume);
+
     // ── Accessors ───────────────────────────────────────────
     const TransferStats& lastStats() const { return _lastStats; }
+
+    /** Get current pipeline progress (for resume state persistence). */
+    uint32_t lastCompletedBlock() const { return _lastCompletedBlock; }
+    uint16_t currentSum1() const { return _currentSum1; }
+    uint16_t currentSum2() const { return _currentSum2; }
 
 private:
     WiFiUDP  _udp;
@@ -190,6 +215,20 @@ private:
     uint8_t _rxBuf[COAP_MAX_PDU_SIZE];
 
     TransferStats _lastStats;
+
+    uint32_t _lastCompletedBlock;
+    uint16_t _currentSum1;
+    uint16_t _currentSum2;
+
+    // ── Pipelined download reorder buffer (heap-allocated to reduce stack usage)
+    struct BufferedBlock {
+        uint32_t blockNum;
+        uint8_t  data[1024];
+        uint16_t length;
+        bool     more;
+        bool     valid;
+    };
+    BufferedBlock _reorderBuf[COAP_CLIENT_WINDOW_SIZE];
 
     // ── Internal Helpers ────────────────────────────────────
 

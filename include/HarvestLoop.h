@@ -39,6 +39,7 @@
 #include "AodvRouter.h"
 #include "AodvPacket.h"
 #include "LoRaRadio.h"
+#include <freertos/semphr.h>
 
 // ─── Harvest States ──────────────────────────────────────────
 
@@ -160,7 +161,7 @@ private:
     uint8_t        _pendingCmdId;       ///< Command ID we're waiting for ACK on
     std::atomic<bool> _relayAckReceived; ///< Have we received the ACK?
     HarvestAckPacket _lastRelayAck;     ///< Last received ACK
-    portMUX_TYPE       _relayAckMux = portMUX_INITIALIZER_UNLOCKED;
+    SemaphoreHandle_t  _relayAckMux;
     char           _relaySSID[21];      ///< SSID of the relay node to connect to
     NodeBlockedCb  _nodeBlockedCb;      ///< Optional callback to check if node is blocked
 

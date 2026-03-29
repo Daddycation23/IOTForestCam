@@ -25,11 +25,11 @@ void taskCoapServerLoop(void* param) {
 
         // ── Relay: serve cached images to gateway ────────────
         if (_relayCachedServing) {
-            cachedCoapServer.loop();
-
             if (millis() - _relayCachedStartMs >= RELAY_CACHED_TIMEOUT_MS) {
                 Serial.println("[Relay] Cached serving timeout — cleaning up");
                 relayCachedCleanup();
+            } else {
+                cachedCoapServer.loop();
             }
         }
 

@@ -8,13 +8,13 @@ Usage: python tools/flash_and_monitor.py [duration_seconds]
 
 import subprocess, serial, threading, time, sys, os
 
-PIO = "C:/Users/jammy/.platformio/penv/Scripts/pio.exe"
+PIO = os.path.expanduser("~/.platformio/penv/Scripts/pio.exe")
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 NODES = {
-    "COM6":  {"mac": "79D8", "logfile": "node_79D8.log"},
-    "COM13": {"mac": "8560", "logfile": "node_8560.log"},
-    "COM14": {"mac": "80E4", "logfile": "node_80E4.log"},
+    "COM10": {"mac": "8560", "logfile": "node_8560.log"},
+    "COM12": {"mac": "7B28", "logfile": "node_7B28.log"},
+    "COM13": {"mac": "80E4", "logfile": "node_80E4.log"},
 }
 
 DURATION = int(sys.argv[1]) if len(sys.argv) > 1 else 300

@@ -297,7 +297,7 @@ void CoapServer::_handleInfoGet(CoapMessage& req,
     resp.addOptionUint(COAP_OPT_CONTENT_FORMAT, COAP_FMT_APP_JSON);
 
     // Build JSON catalogue
-    static char json[512];
+    char json[512];
     int pos = snprintf(json, sizeof(json),
                        "{\"count\":%u,\"block_size\":%u,\"images\":[",
                        _storage.imageCount(), (unsigned)VSENSOR_BLOCK_SIZE);
@@ -338,7 +338,7 @@ void CoapServer::_handleChecksumGet(CoapMessage& req, uint8_t imageIndex,
     CoapMessage resp = _makeResponse(req, COAP_CONTENT);
     resp.addOptionUint(COAP_OPT_CONTENT_FORMAT, COAP_FMT_APP_JSON);
 
-    static char json[128];
+    char json[128];
     int len = snprintf(json, sizeof(json),
                        "{\"id\":%u,\"checksum\":%u,\"size\":%lu}",
                        imageIndex, checksum, info.fileSize);
@@ -362,7 +362,7 @@ void CoapServer::_handleWellKnownCore(CoapMessage& req,
     CoapMessage resp = _makeResponse(req, COAP_CONTENT);
     resp.addOptionUint(COAP_OPT_CONTENT_FORMAT, COAP_FMT_APP_LINK_FORMAT);
 
-    static char links[256];
+    char links[256];
     int len = snprintf(links, sizeof(links),
         "</info>;rt=\"core.info\";ct=50,"
         "</image>;rt=\"core.image\";ct=42;sz=512,"

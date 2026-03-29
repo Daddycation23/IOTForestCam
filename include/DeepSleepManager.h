@@ -43,6 +43,16 @@ extern RTC_DATA_ATTR bool     rtcStateValid;
 extern RTC_DATA_ATTR bool     rtcGatewayKnown;
 extern RTC_DATA_ATTR char     rtcGatewaySSID[32];
 
+// ─── Resume Offset State (persists across deep sleep) ──────
+extern RTC_DATA_ATTR bool     rtcResumeValid;       // Is there a resumable transfer?
+extern RTC_DATA_ATTR uint8_t  rtcResumeNodeId[6];   // MAC of the node we were downloading from
+extern RTC_DATA_ATTR uint8_t  rtcResumeImageIdx;    // Image index we were downloading
+extern RTC_DATA_ATTR uint32_t rtcResumeBlock;        // Block number to resume from
+extern RTC_DATA_ATTR uint16_t rtcResumeSum1;         // Fletcher-16 partial state (low byte accumulator)
+extern RTC_DATA_ATTR uint16_t rtcResumeSum2;         // Fletcher-16 partial state (high byte accumulator)
+extern RTC_DATA_ATTR char     rtcResumeFilePath[64]; // Partial file path on SD
+extern RTC_DATA_ATTR uint32_t rtcResumeTotalBytes;   // Bytes written so far
+
 // ─── DeepSleepManager Class ─────────────────────────────────
 
 class DeepSleepManager {
@@ -115,6 +125,14 @@ public:
      * Mark that CoAP server is busy serving (prevents sleeping).
      */
     void setCoapBusy(bool busy);
+
+    /** Save transfer resume state before entering deep sleep. */
+    static void saveResumeState(const uint8_t nodeId[6], uint8_t imageIdx,
+                                uint32_t blockNum, uint16_t sum1, uint16_t sum2,
+                                const char* filePath, uint32_t totalBytes);
+
+    /** Clear resume state (call after successful transfer completion). */
+    static void clearResumeState();
 
     /** Get boot count from RTC memory. */
     uint32_t bootCount() const { return rtcBootCount; }

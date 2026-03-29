@@ -75,7 +75,7 @@ struct ImageInfo {
     char     filename[128];     ///< Full path, e.g. "/images/img_001.jpg"
     uint32_t fileSize;          ///< Total bytes
     uint32_t totalBlocks;       ///< ceil(fileSize / BLOCK_SIZE)
-    uint32_t checksum;          ///< Simple Fletcher-16 over entire file
+    int32_t  checksum;          ///< Fletcher-16 over entire file, or -1 on error
 };
 
 /**
@@ -178,7 +178,7 @@ public:
      * @param index catalogue index.
      * @return 16-bit checksum, or 0 on error.
      */
-    uint16_t computeChecksum(uint8_t index);
+    int32_t computeChecksum(uint8_t index);
 
 private:
     const char* _imageDir;      ///< Directory to scan (e.g., "/images" or "/cached")
