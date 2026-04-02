@@ -1,5 +1,5 @@
-import json
 #!/usr/bin/env python3
+import json
 """
 IOT Forest Cam — Full GUI Dashboard
 
@@ -28,6 +28,7 @@ import time
 import queue
 import os
 from pathlib import Path
+from tkinter import filedialog
 
 # --- State Classes ---
 class Node:
@@ -83,9 +84,12 @@ class ForestCamDashboard(tk.Tk):
     def __init__(self, state: DashboardState):
         super().__init__()
         self.state = state
-        self.title("IOT Forest Cam — GUI Dashboard")
-        self.geometry("1100x700")
+        self.title("🌲 IOT Forest Cam — Dashboard")
+        self.geometry("1200x750")
+        self.configure(bg="#f5f5f5")
         self.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.current_image_data = None  # Store current image data for download
+        self.current_image_info = None  # Store current image info
         self._build_widgets()
 
         # Start CoAP polling
@@ -126,13 +130,16 @@ class ForestCamDashboard(tk.Tk):
         self.images_info = info.get("images", [])
         self.image_listbox.delete(0, tk.END)
         for img in self.images_info:
-            self.image_listbox.insert(tk.END, f"{img['id']}: {os.path.basename(img['name'])} ({img['size']} B, {img['blocks']} blocks)")
-        # Update image count label
+            # Format: "0 │ image.jpg │ 22.1 KB │ 23 blocks"
+            size_kb = img['size'] / 1024
+            self.image_listbox.insert(tk.END, 
+                f"{img['id']:2d} │ {os.path.basename(img['name']):40s} │ {size_kb:7.1f} KB │ {img['blocks']:3d} blocks")
+        # Update image count badge
         if hasattr(self, 'image_count_label'):
-            self.image_count_label.config(text=f"Images transferred: {len(self.images_info)}")
+            self.image_count_label.config(text=f"{len(self.images_info)} images")
         # Log
         self.log_text.config(state="normal")
-        self.log_text.insert("end", f"[CoAP] /info: {info}\n")
+        self.log_text.insert("end", f"[CoAP] Fetched info: {len(self.images_info)} images available\n")
         self.log_text.see("end")
         self.log_text.config(state="disabled")
 
@@ -158,9 +165,10 @@ class ForestCamDashboard(tk.Tk):
         ctx = await aiocoap.Context.create_client_context()
         data = bytearray()
         block_num = 0
-        self._set_transfer_status(f"Transferring {os.path.basename(img_info['name'])}...")
-        self.progress['maximum'] = total_blocks
-        self.progress['value'] = 0
+        
+        # Initialize UI on main thread
+        self.after(0, self._init_transfer_ui, total_blocks, os.path.basename(img_info['name']))
+        
         try:
             while True:
                 block2_value = (block_num << 4) | 6  # SZX=6 (1024)
@@ -174,81 +182,387 @@ class ForestCamDashboard(tk.Tk):
                 response = await asyncio.wait_for(ctx.request(request).response, timeout=15)
                 if response.code.is_successful():
                     data.extend(response.payload)
+                    # Update progress on main thread
                     self.after(0, self._update_transfer_progress, block_num+1, total_blocks, len(data))
                     if response.opt.block2 and response.opt.block2.more:
                         block_num += 1
                     else:
                         break
                 else:
-                    self._set_transfer_status(f"Error: CoAP response {response.code}")
+                    self.after(0, self._set_transfer_status, f"Error: CoAP response {response.code}")
                     return
-            # Display image
-            self._set_transfer_status(f"Done: {os.path.basename(img_info['name'])}")
-            self._display_image_data(data)
+            # Display image on main thread
+            self.after(0, self._set_transfer_status, f"Done: {os.path.basename(img_info['name'])}")
+            self.after(0, self._display_image_data, data, img_info)
         except Exception as e:
-            self._set_transfer_status(f"Error: {e}")
+            self.after(0, self._set_transfer_status, f"Error: {e}")
         finally:
             await ctx.shutdown()
 
+    def _init_transfer_ui(self, total_blocks, filename):
+        """Initialize progress bar and status (called on main thread)"""
+        self.progress['maximum'] = total_blocks
+        self.progress['value'] = 0
+        self.harvest_label.config(text=f"Transferring {filename}...")
+        self.transfer_label.config(text="Transferred: 0 B")
+        self.last_file_label.config(text=f"Last file: 0/{total_blocks} blocks")
+    
     def _update_transfer_progress(self, block, total, bytes_transferred):
+        """Update progress bar (called on main thread)"""
         self.progress['value'] = block
         self.transfer_label.config(text=f"Transferred: {bytes_transferred} B")
         self.last_file_label.config(text=f"Last file: {block}/{total} blocks")
+        # Debug log
+        self.log_text.config(state="normal")
+        self.log_text.insert("end", f"[Progress] Block {block}/{total} ({bytes_transferred} B)\n")
+        self.log_text.see("end")
+        self.log_text.config(state="disabled")
 
     def _set_transfer_status(self, msg):
+        """Update status label (called on main thread)"""
         self.harvest_label.config(text=msg)
-
-    def _display_image_data(self, data):
+    
+    def _download_current_image(self):
+        """Download current displayed image to Downloads folder"""
+        if not self.current_image_data:
+            messagebox.showwarning("No Image", "No image loaded to download")
+            return
+        
+        # Get Downloads folder path
+        downloads_path = Path.home() / "Downloads"
+        downloads_path.mkdir(exist_ok=True)
+        
+        # Determine filename
+        if self.current_image_info:
+            filename = os.path.basename(self.current_image_info.get('name', 'image.jpg'))
+        else:
+            filename = f"forestcam_image_{int(time.time())}.jpg"
+        
+        # Check if file exists, add counter if needed
+        save_path = downloads_path / filename
+        counter = 1
+        base_name = Path(filename).stem
+        ext = Path(filename).suffix
+        while save_path.exists():
+            save_path = downloads_path / f"{base_name}_{counter}{ext}"
+            counter += 1
+        
         try:
+            save_path.write_bytes(self.current_image_data)
+            messagebox.showinfo("Success", f"Image saved to:\n{save_path}")
+            self.log_text.config(state="normal")
+            self.log_text.insert("end", f"[Download] Saved {filename} to {save_path}\n")
+            self.log_text.see("end")
+            self.log_text.config(state="disabled")
+        except Exception as e:
+            messagebox.showerror("Download Error", f"Failed to save image: {e}")
+    
+    def _download_all_images(self):
+        """Download all images from the list to Downloads folder"""
+        if not hasattr(self, 'images_info') or not self.images_info:
+            messagebox.showwarning("No Images", "No images available to download")
+            return
+        
+        # Confirm download
+        count = len(self.images_info)
+        if not messagebox.askyesno("Download All", f"Download all {count} images to Downloads folder?"):
+            return
+        
+        # Start async download in thread
+        def run():
+            asyncio.run(self._download_all_task())
+        threading.Thread(target=run, daemon=True).start()
+    
+    async def _download_all_task(self):
+        """Download all images asynchronously"""
+        downloads_path = Path.home() / "Downloads"
+        downloads_path.mkdir(exist_ok=True)
+        
+        total = len(self.images_info)
+        success_count = 0
+        failed_count = 0
+        
+        self.after(0, self._set_transfer_status, f"Downloading {total} images...")
+        
+        for idx, img_info in enumerate(self.images_info):
+            img_id = img_info['id']
+            filename = os.path.basename(img_info.get('name', f'image_{img_id}.jpg'))
+            
+            self.after(0, self._set_transfer_status, f"Downloading {idx+1}/{total}: {filename}")
+            
+            try:
+                # Fetch image via CoAP
+                import aiocoap
+                ctx = await aiocoap.Context.create_client_context()
+                data = bytearray()
+                block_num = 0
+                
+                while True:
+                    request = aiocoap.Message(
+                        code=aiocoap.GET,
+                        uri=f"coap://{self.coap_host}:5683/image/{img_id}"
+                    )
+                    request.opt.block2 = aiocoap.optiontypes.BlockOption.BlockwiseTuple(
+                        block_num, False, 6
+                    )
+                    response = await asyncio.wait_for(ctx.request(request).response, timeout=15)
+                    
+                    if response.code.is_successful():
+                        data.extend(response.payload)
+                        if response.opt.block2 and response.opt.block2.more:
+                            block_num += 1
+                        else:
+                            break
+                    else:
+                        raise Exception(f"CoAP error: {response.code}")
+                
+                await ctx.shutdown()
+                
+                # Save file
+                save_path = downloads_path / filename
+                counter = 1
+                base_name = Path(filename).stem
+                ext = Path(filename).suffix
+                while save_path.exists():
+                    save_path = downloads_path / f"{base_name}_{counter}{ext}"
+                    counter += 1
+                
+                save_path.write_bytes(data)
+                success_count += 1
+                
+                self.after(0, self._log_message, f"[Download] Saved {filename} ({len(data)} B)")
+                
+            except Exception as e:
+                failed_count += 1
+                self.after(0, self._log_message, f"[Download] Failed {filename}: {e}")
+        
+        # Show summary
+        summary = f"Download complete: {success_count} succeeded, {failed_count} failed"
+        self.after(0, self._set_transfer_status, summary)
+        self.after(0, messagebox.showinfo, "Download Complete", 
+                   f"Downloaded {success_count}/{total} images to:\n{downloads_path}")
+    
+    def _log_message(self, msg):
+        """Add message to event log"""
+        self.log_text.config(state="normal")
+        self.log_text.insert("end", f"{msg}\n")
+        self.log_text.see("end")
+        self.log_text.config(state="disabled")
+
+    def _display_image_data(self, data, img_info=None):
+        try:
+            self.current_image_data = bytes(data)  # Store for download
+            self.current_image_info = img_info  # Store metadata
             img = Image.open(io.BytesIO(data))
             img.thumbnail((400, 400))
             self.tk_img = ImageTk.PhotoImage(img)
-            self.img_panel.config(image=self.tk_img)
+            self.img_panel.config(image=self.tk_img, text="", bg="#f8f9fa")
+            # Enable download button
+            if hasattr(self, 'download_btn'):
+                self.download_btn.config(state="normal")
         except Exception as e:
             messagebox.showerror("Image Error", f"Failed to open image: {e}")
 
     def _build_widgets(self):
-        # Header
-        header = tk.Label(self, text="IOT Forest Cam — Live Dashboard", font=("Arial", 18, "bold"), bg="#1e3a5c", fg="white", pady=10)
-        header.pack(fill=tk.X)
+        # Modern color scheme
+        header_bg = "#1a5f7a"
+        card_bg = "#ffffff"
+        text_primary = "#2c3e50"
+        text_secondary = "#7f8c8d"
+        accent_green = "#27ae60"
+        accent_blue = "#3498db"
+        
+        # Header with gradient-like effect
+        header_frame = tk.Frame(self, bg=header_bg, height=80)
+        header_frame.pack(fill=tk.X)
+        header_frame.pack_propagate(False)
+        
+        header_label = tk.Label(header_frame, text="🌲 IOT Forest Cam", 
+                               font=("Segoe UI", 24, "bold"), 
+                               bg=header_bg, fg="white")
+        header_label.pack(side=tk.LEFT, padx=30, pady=20)
+        
+        subtitle = tk.Label(header_frame, text="Real-time Image Harvesting Dashboard", 
+                           font=("Segoe UI", 10), 
+                           bg=header_bg, fg="#b3d4e0")
+        subtitle.pack(side=tk.LEFT, padx=(0, 30), pady=20)
 
-        # Main panels
-        main_frame = tk.Frame(self)
-        main_frame.pack(fill=tk.BOTH, expand=True)
+        # Main container with background
+        container = tk.Frame(self, bg="#f5f5f5")
+        container.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
 
-        # (Discovered nodes section removed)
-
-        # Center: Harvest Progress & Image
-        center = tk.Frame(main_frame)
-        center.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=10, pady=10)
-        tk.Label(center, text="Harvest Status", font=("Arial", 12, "bold")).pack(anchor="w")
-        self.harvest_label = tk.Label(center, text="Phase: IDLE", font=("Arial", 11))
-        self.harvest_label.pack(anchor="w")
-        self.progress = ttk.Progressbar(center, orient="horizontal", length=400, mode="determinate")
-        self.progress.pack(anchor="w", pady=5)
-        self.transfer_label = tk.Label(center, text="Transferred: 0 KB", font=("Arial", 10))
-        self.transfer_label.pack(anchor="w")
-        self.last_file_label = tk.Label(center, text="Last file: ", font=("Arial", 10))
-        self.last_file_label.pack(anchor="w")
-        # Image count label
-        self.image_count_label = tk.Label(center, text="Images transferred: 0", font=("Arial", 11, "bold"))
-        self.image_count_label.pack(anchor="w", pady=(10,0))
-        # Image list
-        tk.Label(center, text="Available Images", font=("Arial", 11, "bold")).pack(anchor="w", pady=(5,0))
-        self.image_listbox = tk.Listbox(center, width=50, height=8)
-        self.image_listbox.pack(anchor="w", fill=tk.X, pady=2)
+        # Left panel: Harvest Progress & Controls
+        left_panel = tk.Frame(container, bg=card_bg, relief=tk.RAISED, bd=1)
+        left_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+        
+        # Harvest status card
+        status_card = tk.Frame(left_panel, bg=card_bg)
+        status_card.pack(fill=tk.X, padx=20, pady=20)
+        
+        tk.Label(status_card, text="📊 Transfer Status", 
+                font=("Segoe UI", 14, "bold"), 
+                bg=card_bg, fg=text_primary, anchor="w").pack(fill=tk.X, pady=(0, 10))
+        
+        self.harvest_label = tk.Label(status_card, text="Ready to transfer", 
+                                      font=("Segoe UI", 11), 
+                                      bg=card_bg, fg=text_secondary, anchor="w")
+        self.harvest_label.pack(fill=tk.X, pady=5)
+        
+        # Modern progress bar with custom style
+        style = ttk.Style()
+        style.theme_use('clam')
+        style.configure("Custom.Horizontal.TProgressbar", 
+                       troughcolor='#ecf0f1', 
+                       bordercolor=card_bg, 
+                       background=accent_green, 
+                       lightcolor=accent_green, 
+                       darkcolor=accent_green,
+                       thickness=25)
+        
+        self.progress = ttk.Progressbar(status_card, 
+                                       orient="horizontal", 
+                                       length=500, 
+                                       mode="determinate",
+                                       style="Custom.Horizontal.TProgressbar")
+        self.progress.pack(fill=tk.X, pady=10)
+        
+        # Stats row
+        stats_frame = tk.Frame(status_card, bg=card_bg)
+        stats_frame.pack(fill=tk.X, pady=5)
+        
+        self.transfer_label = tk.Label(stats_frame, text="Transferred: 0 B", 
+                                       font=("Segoe UI", 9), 
+                                       bg=card_bg, fg=text_secondary, anchor="w")
+        self.transfer_label.pack(side=tk.LEFT)
+        
+        self.last_file_label = tk.Label(stats_frame, text="Blocks: 0/0", 
+                                        font=("Segoe UI", 9), 
+                                        bg=card_bg, fg=text_secondary, anchor="e")
+        self.last_file_label.pack(side=tk.RIGHT)
+        
+        # Separator
+        tk.Frame(left_panel, bg="#e0e0e0", height=1).pack(fill=tk.X, padx=20, pady=10)
+        
+        # Image list card
+        list_card = tk.Frame(left_panel, bg=card_bg)
+        list_card.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 20))
+        
+        # Header with count
+        list_header = tk.Frame(list_card, bg=card_bg)
+        list_header.pack(fill=tk.X, pady=(0, 10))
+        
+        tk.Label(list_header, text="📁 Available Images", 
+                font=("Segoe UI", 14, "bold"), 
+                bg=card_bg, fg=text_primary, anchor="w").pack(side=tk.LEFT)
+        
+        self.image_count_label = tk.Label(list_header, text="0 images", 
+                                          font=("Segoe UI", 10, "bold"), 
+                                          bg="#e8f5e9", fg=accent_green, 
+                                          padx=10, pady=3, relief=tk.FLAT)
+        self.image_count_label.pack(side=tk.RIGHT)
+        
+        # Listbox with scrollbar
+        list_container = tk.Frame(list_card, bg=card_bg)
+        list_container.pack(fill=tk.BOTH, expand=True)
+        
+        scrollbar = tk.Scrollbar(list_container)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        self.image_listbox = tk.Listbox(list_container, 
+                                        font=("Consolas", 9),
+                                        bg="#fafafa", 
+                                        fg=text_primary,
+                                        selectbackground=accent_blue,
+                                        selectforeground="white",
+                                        relief=tk.FLAT,
+                                        bd=0,
+                                        highlightthickness=1,
+                                        highlightcolor=accent_blue,
+                                        highlightbackground="#e0e0e0",
+                                        yscrollcommand=scrollbar.set)
+        self.image_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.config(command=self.image_listbox.yview)
         self.image_listbox.bind('<<ListboxSelect>>', self._on_image_select)
-        # ...existing code...
-        # ...existing code...
-        # Image display area
-        self.img_panel = tk.Label(center)
-        self.img_panel.pack(anchor="center", pady=10)
+        
+        # Download buttons
+        button_frame = tk.Frame(list_card, bg=card_bg)
+        button_frame.pack(fill=tk.X, pady=(15, 0))
+        
+        self.download_btn = tk.Button(button_frame, 
+                                      text="⬇ Download Selected", 
+                                      command=self._download_current_image,
+                                      state="disabled", 
+                                      bg=accent_green, 
+                                      fg="white",
+                                      font=("Segoe UI", 10, "bold"), 
+                                      relief=tk.FLAT,
+                                      padx=20, 
+                                      pady=10,
+                                      cursor="hand2",
+                                      activebackground="#229954",
+                                      activeforeground="white")
+        self.download_btn.pack(side=tk.LEFT, padx=(0, 10))
+        
+        self.download_all_btn = tk.Button(button_frame, 
+                                          text="⬇ Download All", 
+                                          command=self._download_all_images,
+                                          bg=accent_blue, 
+                                          fg="white",
+                                          font=("Segoe UI", 10, "bold"), 
+                                          relief=tk.FLAT,
+                                          padx=20, 
+                                          pady=10,
+                                          cursor="hand2",
+                                          activebackground="#2874a6",
+                                          activeforeground="white")
+        self.download_all_btn.pack(side=tk.LEFT)
 
-        # Right: Log
-        right = tk.Frame(main_frame)
-        right.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=10, pady=10)
-        tk.Label(right, text="Event Log", font=("Arial", 12, "bold")).pack(anchor="w")
-        self.log_text = scrolledtext.ScrolledText(right, width=50, height=30, state="disabled", font=("Consolas", 9))
+        # Right panel: Image Preview & Logs
+        right_panel = tk.Frame(container, bg=card_bg, relief=tk.RAISED, bd=1)
+        right_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        # Image preview card
+        preview_card = tk.Frame(right_panel, bg=card_bg)
+        preview_card.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        
+        tk.Label(preview_card, text="🖼 Image Preview", 
+                font=("Segoe UI", 14, "bold"), 
+                bg=card_bg, fg=text_primary, anchor="w").pack(fill=tk.X, pady=(0, 15))
+        
+        # Image panel with border
+        img_container = tk.Frame(preview_card, bg="#f8f9fa", 
+                                relief=tk.SUNKEN, bd=1, 
+                                highlightthickness=1, highlightbackground="#dee2e6")
+        img_container.pack(fill=tk.BOTH, expand=True)
+        
+        self.img_panel = tk.Label(img_container, 
+                                 text="Click an image to preview",
+                                 font=("Segoe UI", 11),
+                                 bg="#f8f9fa", 
+                                 fg=text_secondary)
+        self.img_panel.pack(expand=True, padx=40, pady=40)
+        
+        # Separator
+        tk.Frame(right_panel, bg="#e0e0e0", height=1).pack(fill=tk.X, padx=20, pady=10)
+        
+        # Event log card
+        log_card = tk.Frame(right_panel, bg=card_bg)
+        log_card.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 20))
+        
+        tk.Label(log_card, text="📝 Event Log", 
+                font=("Segoe UI", 12, "bold"), 
+                bg=card_bg, fg=text_primary, anchor="w").pack(fill=tk.X, pady=(0, 10))
+        
+        self.log_text = scrolledtext.ScrolledText(log_card, 
+                                                  height=8, 
+                                                  state="disabled", 
+                                                  font=("Consolas", 8),
+                                                  bg="#1e1e1e", 
+                                                  fg="#d4d4d4",
+                                                  relief=tk.FLAT,
+                                                  bd=0,
+                                                  padx=10,
+                                                  pady=10)
         self.log_text.pack(fill=tk.BOTH, expand=True)
 
     def on_close(self):

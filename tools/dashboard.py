@@ -258,12 +258,14 @@ def parse_line(line: str, dash: Dashboard):
         dash.harvest.phase = "CONNECTED"
         dash.add_log(f"{GREEN}WiFi connected to {dash.harvest.target_ssid}{RESET}")
 
-    # CoAP download progress
-    m = re.search(r'Block\s+(\d+)/(\d+)', line)
+    # CoAP download progress (matches "Block X — Y/Z bytes" format)
+    m = re.search(r'Block\s+(\d+)\s+—\s+(\d+)/(\d+)\s+bytes', line)
     if m:
         dash.harvest.current_block = int(m.group(1))
-        dash.harvest.total_blocks = int(m.group(2))
+        dash.harvest.bytes_transferred = int(m.group(2))
         dash.harvest.phase = "DOWNLOADING"
+        # Extract total blocks from total_size / 1024 if we have totalBlocks info from elsewhere
+        # For now, just track the block number as progress
 
     # Image download info
     m = re.search(r'Downloading image (\d+)/(\d+)', line)
