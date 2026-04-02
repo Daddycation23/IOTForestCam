@@ -193,6 +193,7 @@ private:
 
     /** Scan _imageDir and populate _catalogue[]. */
     bool        _scanDirectory();
+    void        _scanDirectoryHelper(File& dir, const char* dirPath);
 
     /** Internal: fill a BlockReadResult from an open file at a byte offset. */
     bool        _readAtOffset(uint32_t byteOffset, uint32_t blockIdx,

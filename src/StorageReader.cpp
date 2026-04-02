@@ -268,13 +268,29 @@ uint16_t StorageReader::computeChecksum(uint8_t index) {
 bool StorageReader::_scanDirectory() {
     _imageCount = 0;
 
+    // Scan primary directory (e.g., /images)
     File dir = SD.open(_imageDir);
     if (!dir || !dir.isDirectory()) {
         log_e("%s: Cannot open directory %s", TAG, _imageDir);
         if (dir) dir.close();
-        return false;
+    } else {
+        _scanDirectoryHelper(dir, _imageDir);
+        dir.close();
     }
 
+    // Also scan /received directory if we're scanning /images (gateway only)
+    if (strcmp(_imageDir, "/images") == 0 && SD.exists("/received")) {
+        File receivedDir = SD.open("/received");
+        if (receivedDir && receivedDir.isDirectory()) {
+            _scanDirectoryHelper(receivedDir, "/received");
+            receivedDir.close();
+        }
+    }
+
+    return (_imageCount > 0);
+}
+
+void StorageReader::_scanDirectoryHelper(File& dir, const char* dirPath) {
     while (_imageCount < VSENSOR_MAX_IMAGES) {
         File entry = dir.openNextFile();
         if (!entry) break;   // No more files
@@ -296,23 +312,18 @@ bool StorageReader::_scanDirectory() {
 
         // Populate catalogue entry
         ImageInfo& img = _catalogue[_imageCount];
-        snprintf(img.filename, sizeof(img.filename), "%s/%s",
-                 _imageDir, name);
+        snprintf(img.filename, sizeof(img.filename), "%s/%s", dirPath, name);
         img.fileSize    = entry.size();
         img.totalBlocks = (img.fileSize + VSENSOR_BLOCK_SIZE - 1) / VSENSOR_BLOCK_SIZE;
         entry.close();
         _imageCount++;
 
         // Pre-compute Fletcher-16 checksum at scan time
-        // (_imageCount already incremented so computeChecksum bounds check passes)
         img.checksum = computeChecksum(_imageCount - 1);
 
         log_d("%s:  [%u] %s — %lu B, %lu blocks, checksum=%u",
               TAG, _imageCount - 1, img.filename, img.fileSize, img.totalBlocks, img.checksum);
     }
-
-    dir.close();
-    return (_imageCount > 0);
 }
 
 bool StorageReader::_readAtOffset(uint32_t byteOffset, uint32_t blockIdx,
