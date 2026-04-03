@@ -21,6 +21,7 @@
 #define AODV_ROUTER_H
 
 #include <Arduino.h>
+#include <freertos/semphr.h>
 #include "LoRaRadio.h"
 #include "AodvPacket.h"
 
@@ -43,7 +44,8 @@ struct RouteEntry {
     uint8_t  nextHopId[6];      ///< Next hop MAC toward destination
     uint16_t destSeqNum;        ///< Destination sequence number
     uint8_t  hopCount;          ///< Number of hops to destination
-    uint32_t expiryMs;          ///< millis() when this route expires
+    uint32_t createdMs;         ///< millis() when this route was created/refreshed
+    uint32_t lifetimeMs;        ///< Route lifetime in milliseconds
     bool     active;            ///< Slot in use?
     bool     validSeqNum;       ///< Have a valid sequence number?
     bool     relayed;           ///< We forwarded RREP for this route (we're an intermediate hop)
@@ -97,10 +99,10 @@ public:
     void discoverAll();
 
     /** Check if a valid route exists. */
-    bool hasRoute(const uint8_t destId[6]) const;
+    bool hasRoute(const uint8_t destId[6]);
 
     /** Get route details. Returns false if no route. */
-    bool getRoute(const uint8_t destId[6], RouteEntry& route) const;
+    bool getRoute(const uint8_t destId[6], RouteEntry& route);
 
     // ── Link Break Notification ─────────────────────────────
 
@@ -112,8 +114,8 @@ public:
 
     // ── Accessors / Debug ───────────────────────────────────
 
-    uint8_t routeCount() const;
-    void dumpRoutes() const;
+    uint8_t routeCount();
+    void dumpRoutes();
     uint16_t mySeqNum() const { return _mySeqNum; }
 
     /** True if this node is forwarding traffic for at least one route. */
@@ -135,8 +137,19 @@ private:
     uint32_t   _rreqIdCounter;
     bool       _initialized;
 
-    // ── Route Table ─────────────────────────────────────────
+    // ── Route Table (guarded by _routeMutex for cross-core access) ──
+    SemaphoreHandle_t _routeMutex;
     RouteEntry _routes[AODV_MAX_ROUTES];
+
+    // ── Deferred Broadcast Queue (circular, replaces single-slot) ──
+    static constexpr uint8_t DEFERRED_QUEUE_SIZE = 4;
+    struct DeferredEntry {
+        uint8_t  buf[64];
+        uint8_t  len;
+        uint32_t sendMs;
+        bool     active;
+    };
+    DeferredEntry _deferQueue[DEFERRED_QUEUE_SIZE];
 
     // ── RREQ Dedup Cache ────────────────────────────────────
     struct RreqCacheEntry {
@@ -173,6 +186,7 @@ private:
 
     // ── TX Helper ───────────────────────────────────────────
     void _broadcast(const uint8_t* data, uint8_t len);
+    void _deferBroadcast(const uint8_t* data, uint8_t len, uint32_t delayMs);
 
     // ── MAC comparison ──────────────────────────────────────
     bool _isSelf(const uint8_t id[6]) const;

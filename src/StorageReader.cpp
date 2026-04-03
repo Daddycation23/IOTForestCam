@@ -239,11 +239,11 @@ bool StorageReader::readBlock(uint32_t blockIndex, BlockReadResult& result) {
 // Checksum
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-uint16_t StorageReader::computeChecksum(uint8_t index) {
-    if (!_mounted || index >= _imageCount) return 0;
+int32_t StorageReader::computeChecksum(uint8_t index) {
+    if (!_mounted || index >= _imageCount) return -1;
 
     File f = SD.open(_catalogue[index].filename, FILE_READ);
-    if (!f) return 0;
+    if (!f) return -1;
 
     // Fletcher-16 algorithm — fast, single-pass, good for error detection
     uint16_t sum1 = 0, sum2 = 0;

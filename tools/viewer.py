@@ -130,10 +130,11 @@ def fletcher16(data: bytes) -> int:
 
 def show_image(path: str):
     """Open an image using the system viewer (Preview on Mac)."""
+    import subprocess as _sp
     if sys.platform == "darwin":
-        os.system(f'open "{path}"')
+        _sp.run(["open", path])
     elif sys.platform == "linux":
-        os.system(f'xdg-open "{path}"')
+        _sp.run(["xdg-open", path])
     elif sys.platform == "win32":
         os.startfile(path)
 
@@ -229,12 +230,15 @@ async def cmd_coap(args):
             print(f"{len(data):,} bytes", end=" ")
 
             # Verify checksum
-            expected = img_info.get("checksum", 0)
+            expected = img_info.get("checksum")
             actual = fletcher16(data)
-            if expected and actual != expected:
-                print(f"CHECKSUM MISMATCH (got 0x{actual:04X}, expected 0x{expected:04X})")
+            if expected is not None:
+                if actual != expected:
+                    print(f"CHECKSUM MISMATCH (got 0x{actual:04X}, expected 0x{expected:04X})")
+                else:
+                    print("OK")
             else:
-                print("OK")
+                print("OK (no checksum in catalogue)")
 
             out_path = out_dir / basename
             out_path.write_bytes(data)

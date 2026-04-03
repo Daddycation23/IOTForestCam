@@ -10,12 +10,13 @@
 
 #include "LoRaRadio.h"
 #include "LoRaStatus.h"
+#include <atomic>
 
 static const char* TAG = "LoRaRadio";
 
-// ISR flag for DIO1 interrupt detection
-static volatile bool _dio1Fired = false;
-static void IRAM_ATTR _dio1ISR() { _dio1Fired = true; }
+// ISR flag for DIO1 interrupt detection — atomic for dual-core cache coherence
+static std::atomic<bool> _dio1Fired{false};
+static void IRAM_ATTR _dio1ISR() { _dio1Fired.store(true, std::memory_order_release); }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Constructor
@@ -136,7 +137,7 @@ bool LoRaRadio::startReceive() {
     if (!_initialized) return false;
 
     int state = _radio.startReceive();
-    _dio1Fired = false;
+    _dio1Fired.store(false, std::memory_order_relaxed);
     attachInterrupt(digitalPinToInterrupt(LORA_DIO1), _dio1ISR, RISING);
 
     if (state == RADIOLIB_ERR_NONE) {
@@ -153,9 +154,8 @@ bool LoRaRadio::checkReceive(LoRaRxResult& result) {
 
     bool packetDetected = false;
 
-    // ── Strategy 1: DIO1 ISR ────────────────────────────────
-    if (_dio1Fired) {
-        _dio1Fired = false;
+    // ── Strategy 1: DIO1 ISR (atomic exchange for dual-core safety) ──
+    if (_dio1Fired.exchange(false, std::memory_order_acquire)) {
         packetDetected = true;
     }
 

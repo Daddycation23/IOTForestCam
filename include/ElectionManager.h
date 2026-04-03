@@ -19,6 +19,7 @@
 #define ELECTION_MANAGER_H
 
 #include <Arduino.h>
+#include <atomic>
 #include "LoRaBeacon.h"
 #include "LoRaRadio.h"
 #include "ElectionPacket.h"
@@ -61,7 +62,7 @@ public:
     void onBeacon(const BeaconPacket& beacon);
     void onElectionPacket(const uint8_t* buf, uint8_t len);
 
-    NodeRole activeRole() const { return _activeRole; }
+    NodeRole activeRole() const { return static_cast<NodeRole>(_activeRole.load()); }
     bool isPromoted() const { return _state == ELECT_ACTING_GATEWAY; }
     bool isElectionActive() const {
         return _state == ELECT_ELECTION_START || _state == ELECT_WAITING ||
@@ -87,7 +88,7 @@ private:
     uint8_t  _mac[6];
     uint32_t _myPriority;
     NodeRole _originalRole;
-    NodeRole _activeRole;
+    std::atomic<uint8_t> _activeRole;
 
     ElectionState _state;
     uint32_t _stateEnteredMs;
@@ -107,6 +108,7 @@ private:
 
     uint32_t _backoffMs;
     uint32_t _cooldownUntilMs;
+    bool     _sentSuppressDuringElection;
 
     void _enterState(ElectionState newState);
     void _tickIdle();
@@ -120,6 +122,7 @@ private:
     void _tickTxRetransmit();
     uint32_t _computeBackoff() const;
     void _promoteToGateway();
+    void _promoteToRelay();
     void _demoteToLeaf();
 };
 

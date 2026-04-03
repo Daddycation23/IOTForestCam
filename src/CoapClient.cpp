@@ -45,6 +45,9 @@ CoapClient::CoapClient()
     : _running(false)
     , _nextMsgId(0)
     , _nextToken(0)
+    , _lastCompletedBlock(0)
+    , _currentSum1(0)
+    , _currentSum2(0)
 {}
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -290,8 +293,22 @@ CoapClientError CoapClient::downloadImagePipelined(IPAddress serverIP, uint16_t 
                                                      const char* outputPath,
                                                      TransferStats& stats)
 {
+    return downloadImagePipelined(serverIP, serverPort, imageIndex, outputPath, stats, nullptr);
+}
+
+CoapClientError CoapClient::downloadImagePipelined(IPAddress serverIP, uint16_t serverPort,
+                                                     uint8_t imageIndex,
+                                                     const char* outputPath,
+                                                     TransferStats& stats,
+                                                     const DownloadResumeState* resume)
+{
     stats.reset();
     uint32_t startMs = millis();
+
+    // Initialize tracking members
+    _lastCompletedBlock = resume ? resume->startBlock : 0;
+    _currentSum1 = resume ? resume->sum1 : 0;
+    _currentSum2 = resume ? resume->sum2 : 0;
 
     char uriPath[16];
     snprintf(uriPath, sizeof(uriPath), "image/%u", imageIndex);
@@ -300,8 +317,24 @@ CoapClientError CoapClient::downloadImagePipelined(IPAddress serverIP, uint16_t 
     File outFile;
     bool writeToSD = (outputPath != nullptr);
     if (writeToSD) {
-        if (SD.exists(outputPath)) SD.remove(outputPath);
-        outFile = SD.open(outputPath, FILE_WRITE);
+        if (resume != nullptr && resume->startBlock > 0) {
+            // Resume mode: append to existing file
+            if (outputPath && SD.exists(outputPath)) {
+                outFile = SD.open(outputPath, FILE_APPEND);
+                if (!outFile) {
+                    log_w("%s: Resume file %s not openable, falling back to fresh download", TAG, outputPath);
+                    resume = nullptr;  // Fall back to fresh
+                }
+            } else {
+                log_w("%s: Resume file %s does not exist, falling back to fresh download", TAG, outputPath);
+                resume = nullptr;  // Fall back to fresh
+            }
+        }
+        if (resume == nullptr || resume->startBlock == 0) {
+            // Fresh download
+            if (SD.exists(outputPath)) SD.remove(outputPath);
+            outFile = SD.open(outputPath, FILE_WRITE);
+        }
         if (!outFile) {
             log_e("%s: Failed to open %s for writing", TAG, outputPath);
             return COAP_CLIENT_SD_ERROR;
@@ -309,11 +342,19 @@ CoapClientError CoapClient::downloadImagePipelined(IPAddress serverIP, uint16_t 
     }
 
     // Fletcher-16 accumulators
-    uint16_t sum1 = 0, sum2 = 0;
+    uint16_t sum1 = resume ? resume->sum1 : 0;
+    uint16_t sum2 = resume ? resume->sum2 : 0;
 
     // Pipeline state
-    uint32_t nextToSend    = 0;    // Next block number to request
-    uint32_t nextToReceive = 0;    // Next block number we expect in-order
+    uint32_t nextToSend    = resume ? resume->startBlock : 0;    // Next block number to request
+    uint32_t nextToReceive = resume ? resume->startBlock : 0;    // Next block number we expect in-order
+
+    // Pre-populate stats if resuming
+    if (resume && resume->startBlock > 0) {
+        stats.totalBytes = resume->bytesWritten;
+        log_i("%s: Resuming from block %u (sum1=%u, sum2=%u, %u bytes on disk)",
+              TAG, resume->startBlock, resume->sum1, resume->sum2, resume->bytesWritten);
+    }
     uint32_t totalBlocks   = 0;    // Estimated total (updated from Size2)
     bool     lastBlockSeen = false;
     uint8_t  outstanding   = 0;
@@ -328,15 +369,8 @@ CoapClientError CoapClient::downloadImagePipelined(IPAddress serverIP, uint16_t 
     };
     PendingRequest pending[COAP_CLIENT_WINDOW_SIZE] = {};
 
-    // Reorder buffer for out-of-order responses
-    struct BufferedBlock {
-        uint32_t blockNum;
-        uint8_t  data[1024];
-        uint16_t length;
-        bool     more;
-        bool     valid;
-    };
-    BufferedBlock reorderBuf[COAP_CLIENT_WINDOW_SIZE] = {};
+    // Use class-member reorder buffer to reduce stack usage
+    memset(_reorderBuf, 0, sizeof(_reorderBuf));
 
     auto sendBlockRequest = [&](uint32_t blockNum) -> bool {
         // Find free slot
@@ -370,14 +404,14 @@ CoapClientError CoapClient::downloadImagePipelined(IPAddress serverIP, uint16_t 
         for (;;) {
             int found = -1;
             for (uint8_t i = 0; i < COAP_CLIENT_WINDOW_SIZE; i++) {
-                if (reorderBuf[i].valid && reorderBuf[i].blockNum == nextToReceive) {
+                if (_reorderBuf[i].valid && _reorderBuf[i].blockNum == nextToReceive) {
                     found = i;
                     break;
                 }
             }
             if (found < 0) break;
 
-            BufferedBlock& blk = reorderBuf[found];
+            BufferedBlock& blk = _reorderBuf[found];
 
             // Update checksum
             _updateFletcher16(sum1, sum2, blk.data, blk.length);
@@ -393,6 +427,11 @@ CoapClientError CoapClient::downloadImagePipelined(IPAddress serverIP, uint16_t 
 
             stats.totalBytes += blk.length;
             stats.totalBlocks++;
+
+            // Update resume tracking state
+            _lastCompletedBlock = blk.blockNum + 1;  // next block to request on resume
+            _currentSum1 = sum1;
+            _currentSum2 = sum2;
 
             if (!blk.more) lastBlockSeen = true;
 
@@ -436,7 +475,7 @@ CoapClientError CoapClient::downloadImagePipelined(IPAddress serverIP, uint16_t 
                 // Reset pipeline state
                 for (uint8_t i = 0; i < COAP_CLIENT_WINDOW_SIZE; i++) {
                     pending[i].active = false;
-                    reorderBuf[i].valid = false;
+                    _reorderBuf[i].valid = false;
                 }
                 outstanding = 0;
                 nextToSend = 0;
@@ -526,15 +565,23 @@ CoapClientError CoapClient::downloadImagePipelined(IPAddress serverIP, uint16_t 
                             // Buffer the response data
                             int bufSlot = -1;
                             for (uint8_t b = 0; b < COAP_CLIENT_WINDOW_SIZE; b++) {
-                                if (!reorderBuf[b].valid) { bufSlot = b; break; }
+                                if (!_reorderBuf[b].valid) { bufSlot = b; break; }
                             }
                             if (bufSlot >= 0 && response.payload && response.payloadLength > 0) {
-                                reorderBuf[bufSlot].blockNum = blockNum;
-                                memcpy(reorderBuf[bufSlot].data, response.payload,
-                                       min((size_t)response.payloadLength, sizeof(reorderBuf[bufSlot].data)));
-                                reorderBuf[bufSlot].length = response.payloadLength;
-                                reorderBuf[bufSlot].more = block2.more;
-                                reorderBuf[bufSlot].valid = true;
+                                _reorderBuf[bufSlot].blockNum = blockNum;
+                                memcpy(_reorderBuf[bufSlot].data, response.payload,
+                                       min((size_t)response.payloadLength, sizeof(_reorderBuf[bufSlot].data)));
+                                _reorderBuf[bufSlot].length = response.payloadLength;
+                                _reorderBuf[bufSlot].more = block2.more;
+                                _reorderBuf[bufSlot].valid = true;
+                            } else if (bufSlot < 0) {
+                                // Reorder buffer full — re-activate the pending slot so
+                                // the timeout logic will retransmit this block
+                                log_w("%s: Reorder buffer full for block %lu — will retry",
+                                      TAG, blockNum);
+                                pending[slot].active = true;
+                                pending[slot].sentMs = millis();  // Reset timeout
+                                outstanding++;
                             }
 
                             // Process in-order blocks

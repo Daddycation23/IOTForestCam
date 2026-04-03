@@ -20,6 +20,16 @@ RTC_DATA_ATTR bool     rtcStateValid  = false;
 RTC_DATA_ATTR bool     rtcGatewayKnown = false;
 RTC_DATA_ATTR char     rtcGatewaySSID[32] = {0};
 
+// ─── Resume Offset State ────────────────────────────────────
+RTC_DATA_ATTR bool     rtcResumeValid     = false;
+RTC_DATA_ATTR uint8_t  rtcResumeNodeId[6] = {0};
+RTC_DATA_ATTR uint8_t  rtcResumeImageIdx  = 0;
+RTC_DATA_ATTR uint32_t rtcResumeBlock     = 0;
+RTC_DATA_ATTR uint16_t rtcResumeSum1      = 0;
+RTC_DATA_ATTR uint16_t rtcResumeSum2      = 0;
+RTC_DATA_ATTR char     rtcResumeFilePath[64] = {0};
+RTC_DATA_ATTR uint32_t rtcResumeTotalBytes = 0;
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Constructor
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -151,4 +161,31 @@ void DeepSleepManager::setHarvestInProgress(bool inProgress) {
 void DeepSleepManager::setCoapBusy(bool busy) {
     _coapBusy = busy;
     if (busy) onActivity();
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Resume Offset State Persistence
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+void DeepSleepManager::saveResumeState(const uint8_t nodeId[6], uint8_t imageIdx,
+                                        uint32_t blockNum, uint16_t sum1, uint16_t sum2,
+                                        const char* filePath, uint32_t totalBytes) {
+    memcpy(rtcResumeNodeId, nodeId, 6);
+    rtcResumeImageIdx  = imageIdx;
+    rtcResumeBlock     = blockNum;
+    rtcResumeSum1      = sum1;
+    rtcResumeSum2      = sum2;
+    strncpy(rtcResumeFilePath, filePath, sizeof(rtcResumeFilePath) - 1);
+    rtcResumeFilePath[sizeof(rtcResumeFilePath) - 1] = '\0';
+    rtcResumeTotalBytes = totalBytes;
+    rtcResumeValid     = true;
+}
+
+void DeepSleepManager::clearResumeState() {
+    rtcResumeValid = false;
+    rtcResumeBlock = 0;
+    rtcResumeSum1  = 0;
+    rtcResumeSum2  = 0;
+    rtcResumeTotalBytes = 0;
+    memset(rtcResumeFilePath, 0, sizeof(rtcResumeFilePath));
 }

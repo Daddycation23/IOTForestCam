@@ -8,7 +8,8 @@ Usage: python tools/flash_and_monitor.py [duration_seconds]
 
 import subprocess, serial, threading, time, sys, os
 
-PIO = "C:/Users/jammy/.platformio/penv/Scripts/pio.exe"
+import shutil as _shutil
+PIO = _shutil.which("pio") or _shutil.which("pio.exe") or "pio"
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 NODES = {
