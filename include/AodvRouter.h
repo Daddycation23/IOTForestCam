@@ -141,11 +141,15 @@ private:
     SemaphoreHandle_t _routeMutex;
     RouteEntry _routes[AODV_MAX_ROUTES];
 
-    // ── Deferred Broadcast (replaces vTaskDelay in handlers) ──
-    bool     _pendingBroadcast;
-    uint8_t  _pendingBuf[64];
-    uint8_t  _pendingLen;
-    uint32_t _pendingSendMs;
+    // ── Deferred Broadcast Queue (circular, replaces single-slot) ──
+    static constexpr uint8_t DEFERRED_QUEUE_SIZE = 4;
+    struct DeferredEntry {
+        uint8_t  buf[64];
+        uint8_t  len;
+        uint32_t sendMs;
+        bool     active;
+    };
+    DeferredEntry _deferQueue[DEFERRED_QUEUE_SIZE];
 
     // ── RREQ Dedup Cache ────────────────────────────────────
     struct RreqCacheEntry {

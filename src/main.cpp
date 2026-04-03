@@ -188,6 +188,9 @@ normal_boot:
 
     Serial.printf("[RTOS] Tasks created — Core 0: LoRa, Core 1: %s\n",
                   g_role == NODE_ROLE_GATEWAY ? "Harvest+CoAP" : "CoAP Server");
+
+    // Reset activity timer so deep sleep counts from end of setup, not static construction
+    deepSleepMgr.onActivity();
 }
 
 // =============================================================

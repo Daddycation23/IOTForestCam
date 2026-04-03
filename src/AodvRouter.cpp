@@ -29,14 +29,11 @@ AodvRouter::AodvRouter(LoRaRadio& radio)
     , _isRelaying(false)
     , _relayingForCount(0)
     , _routeMutex(nullptr)
-    , _pendingBroadcast(false)
-    , _pendingLen(0)
-    , _pendingSendMs(0)
 {
     memset(_myId, 0, 6);
     memset(_routes, 0, sizeof(_routes));
     memset(_rreqCache, 0, sizeof(_rreqCache));
-    memset(_pendingBuf, 0, sizeof(_pendingBuf));
+    memset(_deferQueue, 0, sizeof(_deferQueue));
 }
 
 void AodvRouter::begin(const uint8_t myId[6]) {
@@ -70,7 +67,8 @@ void AodvRouter::tick() {
 
     uint32_t now = millis();
 
-    // ── Expire stale routes ─────────────────────────────────
+    // ── Expire stale routes (guarded for cross-core safety) ──
+    if (_routeMutex) xSemaphoreTake(_routeMutex, pdMS_TO_TICKS(100));
     for (uint8_t i = 0; i < AODV_MAX_ROUTES; i++) {
         if (_routes[i].active && (now - _routes[i].createdMs) >= _routes[i].lifetimeMs) {
             char idStr[24];
@@ -90,6 +88,7 @@ void AodvRouter::tick() {
             _routes[i].active = false;
         }
     }
+    if (_routeMutex) xSemaphoreGive(_routeMutex);
 
     // ── Expire old RREQ cache entries ───────────────────────
     _expireRreqCache();
@@ -104,11 +103,13 @@ void AodvRouter::tick() {
         _discoveryPending = false;
     }
 
-    // ── Send deferred broadcast (replaces blocking vTaskDelay) ──
-    if (_pendingBroadcast && (now - _pendingSendMs) < 10000 &&
-        now >= _pendingSendMs) {
-        _broadcast(_pendingBuf, _pendingLen);
-        _pendingBroadcast = false;
+    // ── Send deferred broadcasts from circular queue ──────────
+    for (uint8_t i = 0; i < DEFERRED_QUEUE_SIZE; i++) {
+        if (_deferQueue[i].active && now >= _deferQueue[i].sendMs &&
+            (now - _deferQueue[i].sendMs) < 10000) {
+            _broadcast(_deferQueue[i].buf, _deferQueue[i].len);
+            _deferQueue[i].active = false;
+        }
     }
 }
 
@@ -203,8 +204,7 @@ void AodvRouter::handleRREQ(const RreqPacket& rreq, float rssi) {
         uint8_t buf[64];
         uint8_t len = rrep.serialize(buf, sizeof(buf));
         if (len > 0) {
-            vTaskDelay(pdMS_TO_TICKS(random(AODV_RREQ_BACKOFF_MIN, AODV_RREQ_BACKOFF_MAX)));
-            _broadcast(buf, len);
+            _deferBroadcast(buf, len, random(AODV_RREQ_BACKOFF_MIN, AODV_RREQ_BACKOFF_MAX));
         }
         return;
     }
@@ -299,6 +299,7 @@ void AodvRouter::handleRREP(const RrepPacket& rrep) {
         Serial.printf("[%s] RREP forwarded toward originator (hops=%u)\n", TAG, newHopCount);
 
         // Mark the forward route as relayed — we're an intermediate hop
+        if (_routeMutex) xSemaphoreTake(_routeMutex, pdMS_TO_TICKS(100));
         int8_t fwdIdx = _findRoute(rrep.destId);
         if (fwdIdx >= 0 && !_routes[fwdIdx].relayed) {
             _routes[fwdIdx].relayed = true;
@@ -306,6 +307,7 @@ void AodvRouter::handleRREP(const RrepPacket& rrep) {
             _isRelaying = true;
             Serial.printf("[%s] Now relaying for %u route(s)\n", TAG, _relayingForCount);
         }
+        if (_routeMutex) xSemaphoreGive(_routeMutex);
     }
 }
 
@@ -318,6 +320,7 @@ void AodvRouter::handleRERR(const RerrPacket& rerr) {
 
     bool affected = false;
 
+    if (_routeMutex) xSemaphoreTake(_routeMutex, pdMS_TO_TICKS(100));
     for (uint8_t i = 0; i < rerr.destCount; i++) {
         int8_t idx = _findRoute(rerr.entries[i].destId);
         if (idx >= 0 && _routes[idx].active) {
@@ -341,6 +344,7 @@ void AodvRouter::handleRERR(const RerrPacket& rerr) {
         _isRelaying = false;
         Serial.printf("[%s] All relayed routes invalidated — no longer relaying\n", TAG);
     }
+    if (_routeMutex) xSemaphoreGive(_routeMutex);
 
     // Propagate RERR if we were affected
     if (affected) {
@@ -419,6 +423,7 @@ void AodvRouter::notifyLinkBreak(const uint8_t brokenNodeId[6]) {
     RerrPacket rerr;
     rerr.destCount = 0;
 
+    if (_routeMutex) xSemaphoreTake(_routeMutex, pdMS_TO_TICKS(100));
     for (uint8_t i = 0; i < AODV_MAX_ROUTES; i++) {
         if (!_routes[i].active) continue;
 
@@ -442,6 +447,7 @@ void AodvRouter::notifyLinkBreak(const uint8_t brokenNodeId[6]) {
         _isRelaying = false;
         Serial.printf("[%s] All relayed routes broken — no longer relaying\n", TAG);
     }
+    if (_routeMutex) xSemaphoreGive(_routeMutex);
 
     if (rerr.destCount > 0) {
         char idStr[24];
@@ -556,6 +562,8 @@ int8_t AodvRouter::_findOldestRouteSlot() const {
 
 void AodvRouter::_upsertRoute(const uint8_t destId[6], const uint8_t nextHopId[6],
                                uint8_t hopCount, uint16_t destSeqNum, uint16_t lifetimeSec) {
+    if (_routeMutex) xSemaphoreTake(_routeMutex, pdMS_TO_TICKS(100));
+
     int8_t idx = _findRoute(destId);
 
     if (idx >= 0) {
@@ -572,6 +580,7 @@ void AodvRouter::_upsertRoute(const uint8_t destId[6], const uint8_t nextHopId[6
         // Always refresh lifetime (wraparound-safe)
         r.createdMs  = millis();
         r.lifetimeMs = (uint32_t)lifetimeSec * 1000;
+        if (_routeMutex) xSemaphoreGive(_routeMutex);
         return;
     }
 
@@ -579,7 +588,10 @@ void AodvRouter::_upsertRoute(const uint8_t destId[6], const uint8_t nextHopId[6
     idx = _findEmptyRouteSlot();
     if (idx < 0) {
         idx = _findOldestRouteSlot();
-        if (idx < 0) return;
+        if (idx < 0) {
+            if (_routeMutex) xSemaphoreGive(_routeMutex);
+            return;
+        }
         log_w("%s: Route table full — replacing oldest entry", TAG);
     }
 
@@ -593,6 +605,8 @@ void AodvRouter::_upsertRoute(const uint8_t destId[6], const uint8_t nextHopId[6
     r.active      = true;
     r.validSeqNum = true;
     r.relayed     = false;
+
+    if (_routeMutex) xSemaphoreGive(_routeMutex);
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -652,11 +666,21 @@ void AodvRouter::_broadcast(const uint8_t* data, uint8_t len) {
 }
 
 void AodvRouter::_deferBroadcast(const uint8_t* data, uint8_t len, uint32_t delayMs) {
-    if (len > sizeof(_pendingBuf)) return;
-    memcpy(_pendingBuf, data, len);
-    _pendingLen = len;
-    _pendingSendMs = millis() + delayMs;
-    _pendingBroadcast = true;
+    if (len > sizeof(_deferQueue[0].buf)) return;
+
+    // Find a free slot in the circular queue
+    for (uint8_t i = 0; i < DEFERRED_QUEUE_SIZE; i++) {
+        if (!_deferQueue[i].active) {
+            memcpy(_deferQueue[i].buf, data, len);
+            _deferQueue[i].len    = len;
+            _deferQueue[i].sendMs = millis() + delayMs;
+            _deferQueue[i].active = true;
+            return;
+        }
+    }
+    // Queue full — send immediately rather than dropping
+    log_w("%s: Deferred broadcast queue full — sending immediately", TAG);
+    _broadcast(data, len);
 }
 
 bool AodvRouter::_isSelf(const uint8_t id[6]) const {

@@ -460,8 +460,7 @@ void HarvestLoop::_doRelayCmd() {
     uint8_t buf[64];
     uint8_t len = cmd.serialize(buf, sizeof(buf));
     if (len > 0) {
-        loraSendSafe(buf, len);
-        loraStartReceiveSafe();
+        loraTxEnqueue(buf, len);
         Serial.printf("[%s] HARVEST_CMD sent to relay %s for leaf %s (cmdId=%u)\n",
                       TAG, _relaySSID, _currentNode.ssid, _pendingCmdId);
     }

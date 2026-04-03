@@ -288,6 +288,7 @@ void ElectionManager::_tickElectionStart() {
 void ElectionManager::_tickWaiting() {
     if (millis() - _stateEnteredMs >= ELECTION_OVERALL_TIMEOUT_MS) {
         Serial.printf("[%s] Election overall timeout — back to IDLE\n", TAG);
+        _sentSuppressDuringElection = false;  // Prevent stale flag causing spurious relay promotion
         _enterState(ELECT_IDLE);
         return;
     }

@@ -1,0 +1,4 @@
+# For full GUI dashboard
+aiocoap
+Pillow
+tk

@@ -574,6 +574,14 @@ CoapClientError CoapClient::downloadImagePipelined(IPAddress serverIP, uint16_t 
                                 _reorderBuf[bufSlot].length = response.payloadLength;
                                 _reorderBuf[bufSlot].more = block2.more;
                                 _reorderBuf[bufSlot].valid = true;
+                            } else if (bufSlot < 0) {
+                                // Reorder buffer full — re-activate the pending slot so
+                                // the timeout logic will retransmit this block
+                                log_w("%s: Reorder buffer full for block %lu — will retry",
+                                      TAG, blockNum);
+                                pending[slot].active = true;
+                                pending[slot].sentMs = millis();  // Reset timeout
+                                outstanding++;
                             }
 
                             // Process in-order blocks
