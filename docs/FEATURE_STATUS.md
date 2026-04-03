@@ -201,23 +201,59 @@
 - **Description:** Expanded test coverage to 17 suites with 152 test cases. Covers all major subsystems including announce flow, beacon v2, gateway-as-AP, election, deep sleep, and CoAP.
 - **Tests:** 152 tests across 17 suites — all passing
 
+### 20. Code Review Fixes — finishingUp branch (2026-03-29)
+- **Branch:** `finishingUp`
+- **Description:** 13 code review bugfixes, resume offset, and auto-relay election. Brought test count from 152 to 181.
+- **Key Changes:**
+  1. **Resume Offset:** Persist download progress to RTC memory across deep sleep. Resume pipelined Block2 transfer from last completed block. Fletcher-16 partial checksum state preserved. 21 new unit tests.
+  2. **Auto-Relay Election:** Extend Bully election to auto-assign RELAY role. Nodes that sent SUPPRESS but lost become RELAY. Runtime relay task creation and SD `/cached/` initialization. 8 new unit tests.
+  3. **13 Code Review Fixes:** Beacon v2 dispatch version mismatch, FreeRTOS mutex in HarvestLoop, goto over variable init, static buffers in CoapServer, relay cleanup race, millis() wraparound (49-day bug), AODV mutex for cross-core safety, blocking delay in AODV, relay atomic ordering, ElectionManager atomic _activeRole, LoRaRadio ISR flag atomic, computeChecksum error sentinel, CoapClient reorder buffer to class member, loopTask stack increase to 16KB.
+- **Tests:** 181/181 passed (19 suites)
+- **Key Files:** `include/CoapClient.h`, `src/CoapClient.cpp`, `include/DeepSleepManager.h`, `src/DeepSleepManager.cpp`, `src/AodvRouter.cpp`, `src/ElectionManager.cpp`, `src/HarvestLoop.cpp`, `src/main.cpp`
+
+### 21. Python Dashboard & Monitoring Tools (2026-04-01)
+- **Branch:** `feature/dashboard`
+- **Status:** Complete
+- **Description:** Python-based monitoring tools for live harvest observation. Terminal dashboard parses serial logs without firmware changes; GUI dashboard adds CoAP image viewer.
+- **Tools:**
+  - `tools/dashboard.py` (610 lines) — Terminal-based live dashboard. Reads any node's serial output, displays role, SSID, boot count, SD/LoRa/CoAP status, WiFi IP, uptime, beacon counter, node discovery, harvest progress, timestamped event log. Auto-detects serial port.
+  - `tools/dashboard_gui.py` (613 lines) — Tkinter GUI dashboard. Live image viewer with CoAP block-wise download, node status panel, harvest progress bar. Downloads images to computer via CoAP `/image` endpoint.
+  - `tools/viewer.py` (357 lines) — Standalone image downloader. Mode 1: CoAP (connect to node WiFi, pull images). Mode 2: SD (browse gateway's `/received/` folder). List, download, auto-open.
+  - `tools/flash_and_monitor.py` (124 lines) — Build + flash + serial monitor automation for all 3 boards.
+- **Requirements:** `pip install pyserial aiocoap Pillow` (see `tools/requirements.txt`)
+- **Key Files:** `tools/dashboard.py`, `tools/dashboard_gui.py`, `tools/viewer.py`, `tools/flash_and_monitor.py`
+
+### 22. Critical Bugfixes — Code Review Round 2 (2026-04-03)
+- **Branch:** `feature/dashboard` (merged from `finishingUp`)
+- **Description:** Three parallel review passes (firmware code review, dashboard tools review, 3-node dry-run deployment trace) identified 28 issues. 10 were fixed and committed.
+- **Firmware Fixes (7):**
+  1. **CRITICAL — AODV route table data race:** `_routeMutex` only acquired on reads, not writes. Core 0 wrote routes while Core 1 read them during harvest → torn reads of 6-byte MAC fields. Fix: added mutex guards to all 6 write paths (`tick`, `_upsertRoute`, `handleRERR`, `notifyLinkBreak`, `handleRREP` relayed flag).
+  2. **CRITICAL — Blocking `vTaskDelay(50-300ms)` in RREP handler:** Blocked entire Core 0 LoRa task during intermediate RREP, dropping incoming packets. Fix: replaced with non-blocking `_deferBroadcast()`.
+  3. **CRITICAL — Single-slot deferred broadcast:** `_deferBroadcast()` silently overwrote pending packets. During multi-node route discovery, all but the last RREP were dropped. Fix: promoted to 4-slot circular queue with immediate-send fallback when full.
+  4. **CRITICAL — CoAP reorder buffer full silently drops blocks:** When all 3 pipeline slots occupied, block data discarded but marked received → corrupt file with hole. Fix: re-activate pending slot for timeout-based retransmit.
+  5. **HIGH — Core 1 direct SPI access:** `HarvestLoop::_doRelayCmd()` called `loraSendSafe()` from Core 1, holding SPI mutex 10-20ms. Fix: replaced with `loraTxEnqueue()`.
+  6. **HIGH — Stale election suppress flag:** `_tickWaiting()` timeout→IDLE path didn't clear `_sentSuppressDuringElection`, causing spurious relay promotion. Fix: clear flag before IDLE transition.
+  7. **HIGH — DeepSleepManager activity timer too early:** Timer initialized at static construction (millis≈0), could expire before gateway finished harvesting. Fix: call `onActivity()` at end of `setup()`.
+- **Dashboard Tool Fixes (3):**
+  1. **CRITICAL — Command injection in viewer.py:** `show_image()` passed network-controlled filenames into shell via string interpolation. Fix: replaced with `subprocess.run()` list form.
+  2. **HIGH — Checksum bypass on zero:** `if expected and actual != expected` skipped verification when expected==0. Fix: changed to `if expected is not None:`.
+  3. **HIGH — Hardcoded PIO path:** `flash_and_monitor.py` had `C:/Users/jammy/...` hardcoded. Fix: replaced with `shutil.which("pio")`.
+- **Tests:** 181/181 passed (19 suites, 31.4s)
+- **Key Files:** `src/AodvRouter.cpp`, `include/AodvRouter.h`, `src/CoapClient.cpp`, `src/ElectionManager.cpp`, `src/HarvestLoop.cpp`, `src/main.cpp`, `tools/viewer.py`, `tools/flash_and_monitor.py`
+
 ---
 
 ## In Progress
 
-### 20. Python Dashboard
-- **Planned Branch:** `feature/dashboard`
-- **Description:** Laptop Python app using `aiocoap` + `tkinter` to pull and display images from gateway via CoAP.
-
-### 21. AES-128 LoRa Encryption
+### 23. AES-128 LoRa Encryption
 - **Status:** Not planned for current sprint
 - **Description:** Encrypt LoRa control-plane packets. Currently all packets are cleartext.
 
-### 22. Queue-Based / TDMA Scheduling
+### 24. Queue-Based / TDMA Scheduling
 - **Status:** Not planned for current sprint
 - **Description:** Replace sequential harvest with time-slotted or queue-based scheduling.
 
-### 23. ESP-Mesh-Lite Wi-Fi Mesh
+### 25. ESP-Mesh-Lite Wi-Fi Mesh
 - **Status:** Not planned — using simple AP/STA with AODV routing instead
 
 ---
@@ -246,27 +282,55 @@ The system uses a **star-mesh hybrid** architecture with two distinct planes:
 
 ## Known Limitations
 
+### LoRa DIO1 Cannot Wake ESP32-S3 from Deep Sleep (Hardware Limitation)
+The SX1280 LoRa module on the LILYGO T3-S3 V1.2 **cannot reliably wake the ESP32-S3 from deep sleep via DIO1 interrupt**. Despite holding RXEN (GPIO 21), TXEN, and CS GPIOs with `gpio_hold_en()` + `gpio_deep_sleep_hold_en()`, the SX1280's receive path loses power or state during ESP32-S3 deep sleep. This is a hardware limitation of the board design — the SX1280 PA (power amplifier) requires active GPIO control that is not maintained during deep sleep.
+
+**Consequence:** The gateway cannot wake sleeping leaf nodes on-demand via LoRa WAKE_PING. The system relies entirely on **timer-based wake** (`esp_sleep_enable_timer_wakeup`, 180s interval). Leaves wake autonomously, connect as STA to the gateway AP, announce via CoAP, and serve images during their 120s awake window.
+
+**Impact on design:** This limitation drove the shift from gateway-initiated harvest (gateway sends WAKE_PING → leaf wakes → gateway downloads) to **leaf-initiated announce harvest** (leaf wakes on timer → leaf connects to gateway → leaf sends POST /announce → gateway downloads). The announce architecture is actually more robust: it eliminates timing alignment issues and removes the need for LoRa-to-WiFi coordination during wake.
+
+**DIO1 ext1 is kept as a secondary wake source** in case future board revisions fix the issue, but the system does not depend on it.
+
 ### LoRa-Reachable but WiFi-Unreachable Nodes
 The SX1280 LoRa (2.4 GHz with PA) has significantly longer range than the ESP32-S3's WiFi (especially at `WIFI_POWER_8_5dBm`). A leaf node may be within LoRa beacon range (registered as 1-hop direct in NodeRegistry) but beyond WiFi range for CoAP image download. The gateway will attempt WiFi connect, timeout after 25s (`HARVEST_WIFI_TIMEOUT_MS`), mark the node as failed, and repeat the failure every harvest cycle.
 
 **Root cause:** AODV routes are based on LoRa reachability, not WiFi range. There is no automatic fallback to relay harvesting when direct WiFi fails but LoRa succeeds.
 
+**Mitigation (implemented 2026-04-03):** WiFi-fail relay fallback. When direct WiFi connect times out (25s), the gateway searches the node registry for another active node to act as a relay. If found, it sends a `HARVEST_CMD` to that node via LoRa, which then performs store-and-forward harvest. This bridges the gap between the 1-hop LoRa route (which doesn't indicate WiFi unreachability) and the existing multi-hop relay path (which only triggers for `hopCount > 1`).
+
+**Remaining limitation:** If NO other node is available to relay (e.g., only 2 nodes in the network and the leaf is out of WiFi range), the node is still marked as failed. Increasing WiFi TX power from `WIFI_POWER_8_5dBm` to `WIFI_POWER_19_5dBm` could also help at the cost of higher power consumption.
+
+### Relay ACK Timeout Too Short for Large Payloads
+The `HARVEST_RELAY_TIMEOUT_MS` (120s) covers only the relay→leaf download phase. If a leaf has >5MB of images (~100-200s at CoAP throughput), the relay exceeds the timeout. The gateway abandons the wait, the relay completes downloading with no consumer, and cached images expire after `RELAY_CACHED_TIMEOUT_MS`.
+
 **Possible mitigations (not implemented):**
-- Auto-relay promotion: after N consecutive WiFi failures, broadcast HARVEST_CMD to other nodes to attempt relay harvest
-- RSSI-based range estimation: if beacon RSSI is weak, preemptively try relay path
-- Increase WiFi TX power from `WIFI_POWER_8_5dBm` to `WIFI_POWER_19_5dBm` (higher power consumption)
+- Progress heartbeat: relay sends periodic LoRa status updates during download
+- Configurable timeout: scale timeout based on leaf's reported image count
+- Chunked relay: relay fetches and forwards one image at a time instead of batch
+
+### Deferred Issues from Code Review (2026-04-03)
+The following issues were identified during the round 2 code review but left for future work:
+
+| # | Severity | Issue | Reason Deferred |
+|---|----------|-------|-----------------|
+| DR-H1 | High | Relay task not suspended when node promotes to gateway | Low risk — `g_role` guard prevents execution |
+| DR-H2 | High | WiFi mode change from Core 0 without Core 1 CoAP sync | Requires CoAP server pause/resume mechanism |
+| DR-H4 | High | Partial image files not cleaned up on harvest abort | Low impact — overwritten on next harvest cycle |
+| D4 | High | `dashboard_gui.py` serial reader not implemented (dead feature) | GUI currently shows CoAP-only status |
+| D5 | High | Race condition in `dashboard_gui.py` `_on_image_select` | Edge case — needs `hasattr` guard |
+| D6 | High | aiocoap context leak on timeout in `dashboard_gui.py` | Needs `try/finally` wrapping |
 
 ---
 
 ## Future Work
 
-### Self-Healing Relay Fallback
+### Self-Healing Relay Fallback (Partially Implemented)
 
-The current star topology relies on leaves connecting directly to the gateway's WiFi AP. If a leaf is out of WiFi range (but still within LoRa range), it fails to connect and goes back to sleep without transferring images. The AODV routing layer on LoRa knows which nodes need multi-hop paths, but this information is only used when the gateway proactively assigns relay harvests — not when a direct WiFi connection fails.
+**Status:** Gateway-side fallback implemented (2026-04-03). Leaf-side fallback not yet implemented.
 
-**Proposed improvement:** When a leaf fails its STA connection to the gateway (25s timeout), instead of sleeping immediately, it falls back to AP mode and stays awake. The gateway, which continues to receive the leaf's LoRa beacons, detects that the node has images but hasn't announced. It then sends a HARVEST_CMD to a nearby relay, which fetches the images from the leaf's AP and forwards them to the gateway.
+**What's done:** When the gateway fails to connect via WiFi to a 1-hop leaf (25s timeout), it now searches the node registry for another active node and sends it a `HARVEST_CMD` via LoRa. The relay node then performs store-and-forward harvest from the leaf's AP. This covers the scenario where a leaf is LoRa-reachable but WiFi-unreachable from the gateway, as long as another node can reach the leaf via WiFi.
 
-Most of the relay infrastructure already exists (HARVEST_CMD, store-and-forward, HARVEST_ACK). The missing piece is the gateway logic to trigger relay harvest for nodes that are LoRa-reachable but WiFi-unreachable.
+**What's not done:** The leaf side. Currently, if a leaf fails its STA connection to the gateway (leaf-initiated announce path), it goes back to sleep immediately. The proposed improvement is: on WiFi STA failure, the leaf falls back to AP mode and stays awake for a window, allowing a relay node to connect and fetch images. The gateway would detect the leaf's LoRa beacons (with images but no announce) and trigger relay harvest.
 
 ---
 
@@ -280,5 +344,6 @@ coap-implemented
                     └── feature/auto-role ....... [Done]
                           └── feature/reactive-harvest .. [Done]
                                 └── feature/gateway-as-ap [Done]
-                                      └── feature/dashboard [Planned]
+                                      ├── finishingUp ............ [Done] resume offset + auto-relay + 13 fixes
+                                      └── feature/dashboard ...... [Done] merged finishingUp + tools + round 2 fixes
 ```

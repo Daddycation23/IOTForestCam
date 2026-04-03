@@ -33,6 +33,7 @@ HarvestLoop::HarvestLoop(NodeRegistry& registry, CoapClient& coapClient)
     , _cycleStartMs(0)
     , _globalImageCounter(0)
     , _relayHarvesting(false)
+    , _wifiFailRelay(false)
     , _routeDiscRreqSent(false)
     , _relayCmdIdCounter(0)
     , _pendingCmdId(0)
@@ -41,6 +42,7 @@ HarvestLoop::HarvestLoop(NodeRegistry& registry, CoapClient& coapClient)
 {
     _stats.reset();
     memset(_relaySSID, 0, sizeof(_relaySSID));
+    memset(_fallbackRelayId, 0, sizeof(_fallbackRelayId));
     _relayAckMux = xSemaphoreCreateMutex();
 }
 
@@ -59,6 +61,7 @@ void HarvestLoop::startCycle() {
         return;
     }
     _routeDiscRreqSent = false;
+    _wifiFailRelay = false;
     _enterState(HARVEST_START);
 }
 
@@ -356,6 +359,35 @@ void HarvestLoop::_doConnect() {
     if (WiFi.status() != WL_CONNECTED) {
         WiFi.disconnect(true);  // Force cleanup of failed connection attempt
         Serial.printf("[ERROR] WiFi connect to %s FAILED (timeout)\n", _currentNode.ssid);
+
+        // ── WiFi-fail relay fallback: find another node to relay for us ──
+        if (_aodvRouter && _loraRadio && !_wifiFailRelay) {
+            bool relayFound = false;
+            if (registryLock()) {
+                for (uint8_t i = 0; i < REGISTRY_MAX_NODES; i++) {
+                    NodeEntry candidate;
+                    if (_registry.getNode(i, candidate) &&
+                        memcmp(candidate.nodeId, _currentNode.nodeId, 6) != 0 &&
+                        candidate.imageCount > 0) {
+                        // Found a candidate — use it as relay
+                        memcpy(_fallbackRelayId, candidate.nodeId, 6);
+                        relayFound = true;
+                        Serial.printf("[%s] WiFi fallback: trying relay via %s\n",
+                                      TAG, candidate.ssid);
+                        break;
+                    }
+                }
+                registryUnlock();
+            }
+
+            if (relayFound) {
+                _wifiFailRelay = true;
+                _enterState(HARVEST_RELAY_CMD);
+                return;
+            }
+        }
+
+        // No relay candidate — mark as failed
         if (registryLock()) {
             _registry.markHarvested(_currentNode.nodeId);
             registryUnlock();
@@ -388,18 +420,27 @@ void HarvestLoop::_doRelayCmd() {
         return;
     }
 
-    // Get the relay node info (nextHop from the route)
-    // We need the relay's SSID to connect to it later
-    RouteEntry route;
-    if (!_aodvRouter->getRoute(_currentNode.nodeId, route)) {
-        Serial.printf("[%s] No AODV route to %s — skipping\n", TAG, _currentNode.ssid);
-        if (registryLock()) {
-            _registry.markHarvested(_currentNode.nodeId);
-            registryUnlock();
+    // Determine which node to use as relay:
+    // - WiFi-fail fallback: use _fallbackRelayId (chosen in _doConnect)
+    // - Normal multi-hop: use nextHopId from AODV route
+    uint8_t relayNodeId[6];
+
+    if (_wifiFailRelay) {
+        memcpy(relayNodeId, _fallbackRelayId, 6);
+        Serial.printf("[%s] Using WiFi-fail fallback relay\n", TAG);
+    } else {
+        RouteEntry route;
+        if (!_aodvRouter->getRoute(_currentNode.nodeId, route)) {
+            Serial.printf("[%s] No AODV route to %s — skipping\n", TAG, _currentNode.ssid);
+            if (registryLock()) {
+                _registry.markHarvested(_currentNode.nodeId);
+                registryUnlock();
+            }
+            _stats.nodesFailed++;
+            _enterState(HARVEST_DISCONNECT);
+            return;
         }
-        _stats.nodesFailed++;
-        _enterState(HARVEST_DISCONNECT);
-        return;
+        memcpy(relayNodeId, route.nextHopId, 6);
     }
 
     // Find the relay in the registry to get its SSID (thread-safe)
@@ -408,7 +449,7 @@ void HarvestLoop::_doRelayCmd() {
     if (registryLock()) {
         for (uint8_t i = 0; i < REGISTRY_MAX_NODES; i++) {
             if (_registry.getNode(i, relayEntry) &&
-                memcmp(relayEntry.nodeId, route.nextHopId, 6) == 0) {
+                memcmp(relayEntry.nodeId, relayNodeId, 6) == 0) {
                 relayFound = true;
                 break;
             }
@@ -731,6 +772,7 @@ void HarvestLoop::_doNext() {
         registryUnlock();
     }
     _relayHarvesting = false;
+    _wifiFailRelay = false;
     _enterState(HARVEST_DISCONNECT);
 }
 

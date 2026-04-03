@@ -165,6 +165,10 @@ private:
     char           _relaySSID[21];      ///< SSID of the relay node to connect to
     NodeBlockedCb  _nodeBlockedCb;      ///< Optional callback to check if node is blocked
 
+    // ── WiFi-fail relay fallback ────────────────────────────
+    bool           _wifiFailRelay;      ///< True if using relay as fallback for WiFi failure
+    uint8_t        _fallbackRelayId[6]; ///< MAC of the fallback relay node
+
     /** Transition to a new state and record entry time. */
     void _enterState(HarvestState newState);
 
