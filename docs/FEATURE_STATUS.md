@@ -265,19 +265,42 @@
   3. **HIGH — WiFi-fail relay fallback used out-of-scope variable:** `HarvestLoop.cpp` `_doRelayCmd()` referenced `route.nextHopId` at line 493, but `route` was declared inside an `else` block at line 432. When `_wifiFailRelay` was true, the `else` branch was skipped, making `route` undefined. Fix: use `relayNodeId` (already populated correctly from either branch).
 - **Key Files:** `src/TaskLoRaLeafRelay.cpp`, `include/HarvestLoop.h`, `src/HarvestLoop.cpp`
 
+### 25. RSSI-Based Relay Assignment (2026-04-04)
+- **Branch:** `main`
+- **Description:** Two-phase election: MAC-based Bully for gateway, then RSSI-based assignment for relay. Gateway picks the leaf with strongest beacon RSSI as relay via new `PKT_TYPE_RELAY_ASSIGN` (0x34) packet. Triggered on new node discovery with 10s RSSI collection grace.
+- **Key Changes:**
+  1. New `RelayAssignPacket` (15 bytes: magic+version+type+gatewayId+relayId) in `include/ElectionPacket.h`
+  2. `getStrongestLeaf()` in `NodeRegistry` — finds highest-RSSI leaf with MAC tiebreak
+  3. `assignRelayByRssi()` / `onRelayAssign()` in `ElectionManager` — gateway-driven relay selection
+  4. Wired into beacon RX dispatch in both `TaskLoRaGateway.cpp` and `TaskLoRaLeafRelay.cpp`
+- **Key Files:** `include/ElectionPacket.h`, `include/ElectionManager.h`, `src/ElectionManager.cpp`, `include/NodeRegistry.h`, `src/NodeRegistry.cpp`
+- **Test Results:** Lab and corridor tests confirmed RSSI relay assignment fires correctly, selects strongest-signal leaf
+
+### 26. Corridor Test Bugfixes (2026-04-04)
+- **Branch:** `main`
+- **Fixes:**
+  1. **CRITICAL — Self-beacon in registry:** Gateway registered its own relayed beacon in NodeRegistry, then tried to harvest from itself (`NO_AP_FOUND` after 25s timeout). Fix: filter self-MAC in beacon RX before `registry.update()`.
+  2. **CRITICAL — relayHarvest() wrong role check:** Checked `g_role` (not yet propagated) instead of `_activeRole` (set by RSSI assignment). HARVEST_CMD silently dropped, gateway stuck in RELAY_WAIT. Fix: check both `g_role` and `_activeRole.load()`.
+  3. **HIGH — CoAP disabled on relays:** `InitNodes.cpp:235` had `g_role != NODE_ROLE_RELAY` guard preventing CoAP from starting on relay nodes booting from RTC. Fix: removed guard.
+  4. **HIGH — Election losers auto-promoted to relay:** `_sentSuppressDuringElection` path promoted middle-priority nodes to RELAY, conflicting with RSSI assignment. Fix: removed; relay assignment now exclusively via `assignRelayByRssi()`.
+  5. **CONFIG — WiFi TX power:** 8.5 dBm (7mW) → 19.5 dBm (90mW) for ~3-4x WiFi range
+  6. **CONFIG — Sleep timeout:** Blocked until first harvest completes (`onHarvestComplete`), then 5 min countdown
+  7. **DISPLAY — OLED:** Gateway shows `Rcvd: X imgs` (transferred only); leaf shows `Served:X` + `CoAP::5683/noSD`
+- **Key Files:** `src/TaskLoRaGateway.cpp`, `src/TaskLoRaLeafRelay.cpp`, `src/TaskRelayHarvest.cpp`, `src/InitNodes.cpp`, `src/main.cpp`, `include/DeepSleepManager.h`, `src/DeepSleepManager.cpp`
+
 ---
 
 ## In Progress
 
-### 25. AES-128 LoRa Encryption
+### 27. AES-128 LoRa Encryption
 - **Status:** Not planned for current sprint
 - **Description:** Encrypt LoRa control-plane packets. Currently all packets are cleartext.
 
-### 26. Queue-Based / TDMA Scheduling
+### 28. Queue-Based / TDMA Scheduling
 - **Status:** Not planned for current sprint
 - **Description:** Replace sequential harvest with time-slotted or queue-based scheduling.
 
-### 27. ESP-Mesh-Lite Wi-Fi Mesh
+### 29. ESP-Mesh-Lite Wi-Fi Mesh
 - **Status:** Not planned — using simple AP/STA with AODV routing instead
 
 ---
