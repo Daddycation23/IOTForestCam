@@ -3,7 +3,7 @@
  * @brief Serial command parser for runtime node management
  *
  * Supported commands (typed into Serial Monitor):
- *   block AABB   — block node with MAC suffix AA:BB from harvest
+ *   block AABB   — block node with MAC suffix AA:BB at LoRa RX level
  *   unblock AABB — remove block on node AA:BB
  *   list         — show currently blocked nodes
  *

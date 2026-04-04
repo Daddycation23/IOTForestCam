@@ -490,7 +490,7 @@ void HarvestLoop::_doRelayCmd() {
 
     HarvestCmdPacket cmd;
     cmd.cmdId = _pendingCmdId;
-    memcpy(cmd.relayId, route.nextHopId, 6);
+    memcpy(cmd.relayId, relayNodeId, 6);
     memcpy(cmd.targetLeafId, _currentNode.nodeId, 6);
     cmd.ssidLen = strlen(_currentNode.ssid);
     if (cmd.ssidLen > HARVEST_CMD_MAX_SSID) cmd.ssidLen = HARVEST_CMD_MAX_SSID;

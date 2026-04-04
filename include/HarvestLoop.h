@@ -62,7 +62,7 @@ enum HarvestState : uint8_t {
 
 static constexpr uint32_t HARVEST_WIFI_TIMEOUT_MS    = 25000;   // WiFi connect timeout (allows for deep-sleep full reboot)
 static constexpr uint32_t HARVEST_RELAY_TIMEOUT_MS   = 120000;  // Wait for relay ACK (2 min)
-static constexpr uint32_t HARVEST_ROUTE_DISC_WAIT_MS = 6000;    // Wait for AODV route replies
+static constexpr uint32_t HARVEST_ROUTE_DISC_WAIT_MS = 12000;   // Wait for AODV route replies (2x RREQ timeout for multi-hop)
 static constexpr const char* HARVEST_WIFI_PASSWORD    = "forestcam123";
 static constexpr const char* HARVEST_SAVE_DIR         = "/received";
 

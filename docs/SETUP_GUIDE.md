@@ -264,13 +264,21 @@ GPIO hold is enabled to maintain pin states during deep sleep.
 
 ## 8. Serial Commands
 
-The firmware accepts serial commands for runtime control:
+The firmware accepts serial commands for runtime control (typed into Serial Monitor at 115200 baud):
 
-| Command    | Description                          |
-|-----------|--------------------------------------|
-| `block`    | Block a node from the registry       |
-| `unblock`  | Unblock a previously blocked node    |
-| `list`     | List all known nodes in the registry |
+| Command          | Example          | Description                                      |
+|-----------------|------------------|--------------------------------------------------|
+| `block AABB`    | `block 80E4`     | Block node with MAC suffix AA:BB at LoRa RX level — all packets from this node are silently dropped |
+| `unblock AABB`  | `unblock 80E4`   | Remove block on node AA:BB                       |
+| `list`          | `list`           | Show currently blocked nodes                     |
+
+**LoRa-level blocking:** Blocked nodes are invisible — their beacons, AODV packets, election messages, and harvest ACKs are all dropped before protocol processing. This simulates the node being out of radio range. Blocks are **volatile** (reset on reboot) and must be **bidirectional** (block on both sides) for correct simulation. Max 8 blocked entries.
+
+**Lab relay testing:** To force relay formation in a lab where all nodes are within range:
+1. Identify MAC suffixes from boot logs (e.g., `ForestCam-86CC` → suffix `86CC`)
+2. On the gateway, type: `block XXYY` (far leaf's suffix)
+3. On the far leaf, type: `block WWZZ` (gateway's suffix)
+4. Leave the relay node unblocked — it must hear both sides
 
 ---
 
@@ -282,6 +290,7 @@ The firmware accepts serial commands for runtime control:
 | BEACON_JITTER_MS           | 2000 ms    | Random jitter on beacon timing   |
 | HARVEST_LISTEN_PERIOD_MS   | 180000 ms  | How long to listen for harvests  |
 | HARVEST_REACTIVE_DELAY_MS  | 15000 ms   | Delay before reactive harvest    |
+| HARVEST_ROUTE_DISC_WAIT_MS | 12000 ms   | AODV route discovery window      |
 | ROUTE_DISCOVERY_DELAY_MS   | 15000 ms   | AODV route discovery delay       |
 | RELAY_CACHED_TIMEOUT_MS    | 120000 ms  | Relay cached data timeout        |
 

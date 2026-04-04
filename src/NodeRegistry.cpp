@@ -196,6 +196,30 @@ bool NodeRegistry::getNextToHarvest(NodeEntry& entry) {
     return true;
 }
 
+bool NodeRegistry::getStrongestLeaf(NodeEntry& entry) const {
+    int8_t bestIdx = -1;
+    float  bestRSSI = -999.0f;
+
+    for (uint8_t i = 0; i < REGISTRY_MAX_NODES; i++) {
+        if (!_nodes[i].active) continue;
+        if (_nodes[i].nodeRole != NODE_ROLE_LEAF) continue;
+
+        if (_nodes[i].rssi > bestRSSI) {
+            bestRSSI = _nodes[i].rssi;
+            bestIdx  = i;
+        } else if (_nodes[i].rssi == bestRSSI && bestIdx >= 0) {
+            // Tiebreak: higher MAC value wins
+            if (memcmp(_nodes[i].nodeId, _nodes[bestIdx].nodeId, 6) > 0) {
+                bestIdx = i;
+            }
+        }
+    }
+
+    if (bestIdx < 0) return false;
+    entry = _nodes[bestIdx];
+    return true;
+}
+
 void NodeRegistry::markHarvested(const uint8_t nodeId[6]) {
     int8_t idx = _findNode(nodeId);
     if (idx >= 0) {

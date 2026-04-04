@@ -68,7 +68,7 @@ void relayCachedCleanup() {
  * Only valid when g_role == NODE_ROLE_RELAY.
  */
 void relayHarvest(const HarvestCmdPacket& cmd) {
-    if (g_role != NODE_ROLE_RELAY) return;
+    if (g_role != NODE_ROLE_RELAY && _activeRole.load() != NODE_ROLE_RELAY) return;
 
     Serial.printf("\n╔══════════════════════════════════════╗\n");
     Serial.printf("║  RELAY HARVEST: %-20s║\n", cmd.ssid);

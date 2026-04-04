@@ -27,7 +27,7 @@
 #include "LoRaRadio.h"
 
 // ─── Deep Sleep Configuration ────────────────────────────────
-static constexpr uint32_t SLEEP_ACTIVE_TIMEOUT_MS     = 120000;  // Stay awake 2 min after boot/wake
+static constexpr uint32_t SLEEP_ACTIVE_TIMEOUT_MS     = 300000;  // Stay awake 5 min after boot/wake
 static constexpr uint32_t SLEEP_TIMER_WAKEUP_S        = 180;     // 3 min timer wake (primary wake source)
 // SLEEP_WAKE_CMD_TIMEOUT_MS removed (WAKE_PING no longer used)
 // SLEEP_WAKE_SETTLE_DELAY_MS removed (WAKE_PING no longer used)
@@ -126,6 +126,12 @@ public:
      */
     void setCoapBusy(bool busy);
 
+    /**
+     * Mark that images have been transferred (allows sleep timer to start).
+     * Sleep is blocked until this is called at least once.
+     */
+    void onHarvestComplete();
+
     /** Save transfer resume state before entering deep sleep. */
     static void saveResumeState(const uint8_t nodeId[6], uint8_t imageIdx,
                                 uint32_t blockNum, uint16_t sum1, uint16_t sum2,
@@ -141,6 +147,7 @@ private:
     uint32_t _lastActivityMs;
     bool     _harvestInProgress;
     bool     _coapBusy;
+    bool     _harvestEverCompleted;  // Sleep blocked until first harvest done
 };
 
 #endif // DEEP_SLEEP_MANAGER_H

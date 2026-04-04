@@ -79,6 +79,15 @@ public:
     ElectionState state() const { return _state; }
     const char* stateStr() const;
 
+    /** Gateway calls this after beacon collection to assign the strongest-RSSI
+     *  leaf as relay. Broadcasts PKT_TYPE_RELAY_ASSIGN.
+     *  @param newNodeDiscovered  If true, forces re-evaluation even if already assigned. */
+    void assignRelayByRssi(bool newNodeDiscovered = false);
+
+    /** Handle incoming RELAY_ASSIGN packet (leaf side).
+     *  If this node is the target, promote to relay. */
+    void onRelayAssign(const uint8_t* buf, uint8_t len);
+
 private:
     LoRaRadio&    _radio;
     NodeRegistry& _registry;
@@ -103,12 +112,13 @@ private:
     uint8_t  _txRemaining;
     uint32_t _lastTxMs;
     uint32_t _txGapMs;
-    uint8_t  _txBuf[ELECTION_PACKET_SIZE];
+    uint8_t  _txBuf[RELAY_ASSIGN_PACKET_SIZE];  // Sized for largest election-family packet
     uint8_t  _txLen;
 
     uint32_t _backoffMs;
     uint32_t _cooldownUntilMs;
     bool     _sentSuppressDuringElection;
+    bool     _relayAssigned;                     // Prevents re-assignment per gateway cycle
 
     void _enterState(ElectionState newState);
     void _tickIdle();

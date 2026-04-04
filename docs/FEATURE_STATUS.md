@@ -241,19 +241,43 @@
 - **Tests:** 181/181 passed (19 suites, 31.4s)
 - **Key Files:** `src/AodvRouter.cpp`, `include/AodvRouter.h`, `src/CoapClient.cpp`, `src/ElectionManager.cpp`, `src/HarvestLoop.cpp`, `src/main.cpp`, `tools/viewer.py`, `tools/flash_and_monitor.py`
 
+### 23. LoRa-Level MAC Blocklist for Lab Testing (2026-04-04)
+- **Branch:** `main`
+- **Description:** Runtime MAC blocklist at the LoRa RX layer to simulate nodes being out of radio range. Packets from blocked senders are dropped before any protocol processing (AODV, beacons, election). Enables forced multi-hop relay testing in lab environments where physical separation is not feasible.
+- **Key Changes:**
+  1. Added `extractSenderMac()` to `include/LoRaDispatch.h` — extracts sender MAC from any packet type based on wire format offsets (Beacon→nodeId, RREQ/RREP→prevHopId, Election→senderId, HARVEST_ACK→relayId).
+  2. Added RX-level block check in both `src/TaskLoRaGateway.cpp` and `src/TaskLoRaLeafRelay.cpp` — immediately after `loraCheckReceiveSafe()`, before packet dispatch.
+  3. Existing `SerialCmd` block/unblock/list commands now operate at LoRa RX level (previously only blocked at harvest level).
+- **Serial Commands:** `block AABB` (block MAC suffix), `unblock AABB`, `list` (show blocked nodes)
+- **Usage:** Block must be **bidirectional** — if Node A blocks Node B, Node B must also block Node A. The relay node in between must have **no blocks**.
+- **Key Files:** `include/LoRaDispatch.h`, `src/TaskLoRaGateway.cpp`, `src/TaskLoRaLeafRelay.cpp`, `include/SerialCmd.h`
+- **Test Results (2026-04-04):** 3-node corridor test confirmed:
+  - AODV 2-hop routes formed through relay when gateway↔leaf blocked
+  - Relay node correctly detected via RREP forwarding (`Now relaying for 1 route(s)`)
+  - Gateway discovered blocked leaf via relay at 2 hops
+  - Harvest initiated through relay path
+
+### 24. Critical Bugfixes — Pre-Physical-Test Review (2026-04-04)
+- **Branch:** `main`
+- **Fixes:**
+  1. **CRITICAL — Deep sleep role save data race:** `TaskLoRaLeafRelay.cpp` saved `g_role` (plain, non-atomic, written by Core 1) from Core 0 before deep sleep. If election promoted node to RELAY but `g_role` hadn't propagated from `loop()`, node woke as LEAF with no relay capabilities. Fix: read `_activeRole.load()` (atomic) instead of `g_role`.
+  2. **HIGH — AODV route discovery window too short:** `HARVEST_ROUTE_DISC_WAIT_MS` was 6s, barely covering one RREQ timeout (5s). For multi-hop RREP through relay, two hops of backoff (50-300ms each) plus processing time left <1s margin. Combined with routes always being expired after 180s deep sleep (120s route lifetime), first-wake harvests frequently missed the discovery window. Fix: increased to 12s (2x RREQ timeout).
+  3. **HIGH — WiFi-fail relay fallback used out-of-scope variable:** `HarvestLoop.cpp` `_doRelayCmd()` referenced `route.nextHopId` at line 493, but `route` was declared inside an `else` block at line 432. When `_wifiFailRelay` was true, the `else` branch was skipped, making `route` undefined. Fix: use `relayNodeId` (already populated correctly from either branch).
+- **Key Files:** `src/TaskLoRaLeafRelay.cpp`, `include/HarvestLoop.h`, `src/HarvestLoop.cpp`
+
 ---
 
 ## In Progress
 
-### 23. AES-128 LoRa Encryption
+### 25. AES-128 LoRa Encryption
 - **Status:** Not planned for current sprint
 - **Description:** Encrypt LoRa control-plane packets. Currently all packets are cleartext.
 
-### 24. Queue-Based / TDMA Scheduling
+### 26. Queue-Based / TDMA Scheduling
 - **Status:** Not planned for current sprint
 - **Description:** Replace sequential harvest with time-slotted or queue-based scheduling.
 
-### 25. ESP-Mesh-Lite Wi-Fi Mesh
+### 27. ESP-Mesh-Lite Wi-Fi Mesh
 - **Status:** Not planned — using simple AP/STA with AODV routing instead
 
 ---

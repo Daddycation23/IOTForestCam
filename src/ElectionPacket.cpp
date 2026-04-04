@@ -54,3 +54,32 @@ void ElectionPacket::senderIdToString(char* buf, size_t bufLen) const {
              senderId[0], senderId[1], senderId[2],
              senderId[3], senderId[4], senderId[5]);
 }
+
+// ─── RelayAssignPacket ──────────────────────────────────────────
+
+uint8_t RelayAssignPacket::serialize(uint8_t* buf, uint8_t maxLen) const {
+    if (maxLen < RELAY_ASSIGN_PACKET_SIZE) return 0;
+    uint8_t pos = 0;
+    buf[pos++] = AODV_MAGIC;
+    buf[pos++] = AODV_VERSION;
+    buf[pos++] = PKT_TYPE_RELAY_ASSIGN;
+    memcpy(&buf[pos], gatewayId, 6); pos += 6;
+    memcpy(&buf[pos], relayId, 6);   pos += 6;
+    return pos;  // 15
+}
+
+bool RelayAssignPacket::parse(const uint8_t* buf, uint8_t len) {
+    if (len < RELAY_ASSIGN_PACKET_SIZE) return false;
+    if (buf[0] != AODV_MAGIC || buf[1] != AODV_VERSION) return false;
+    if (buf[2] != PKT_TYPE_RELAY_ASSIGN) return false;
+    uint8_t pos = 3;
+    memcpy(gatewayId, &buf[pos], 6); pos += 6;
+    memcpy(relayId,   &buf[pos], 6); pos += 6;
+    return true;
+}
+
+void RelayAssignPacket::relayIdToString(char* buf, size_t bufLen) const {
+    snprintf(buf, bufLen, "%02X:%02X:%02X:%02X:%02X:%02X",
+             relayId[0], relayId[1], relayId[2],
+             relayId[3], relayId[4], relayId[5]);
+}

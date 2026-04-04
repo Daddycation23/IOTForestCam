@@ -16,7 +16,8 @@ ElectionManager::ElectionManager(LoRaRadio& radio, NodeRegistry& registry,
       _state(ELECT_IDLE), _stateEnteredMs(0), _electionId(0),
       _currentElectionId(0), _bootMs(0), _graceEndMs(0), _lastGatewayBeaconMs(0), _gatewayEverSeen(false),
       _txRemaining(0), _lastTxMs(0), _txGapMs(0), _txLen(0),
-      _backoffMs(0), _cooldownUntilMs(0), _sentSuppressDuringElection(false)
+      _backoffMs(0), _cooldownUntilMs(0), _sentSuppressDuringElection(false),
+      _relayAssigned(false)
 {
     memset(_mac, 0, 6);
     memset(_txBuf, 0, sizeof(_txBuf));
@@ -34,6 +35,7 @@ void ElectionManager::begin(const uint8_t mac[6], NodeRole originalRole, bool ga
     _state        = ELECT_IDLE;
     _stateEnteredMs = millis();
     _sentSuppressDuringElection = false;
+    _relayAssigned = false;
 
     // On timer wake, restore gateway knowledge from RTC to skip unnecessary election.
     // The node will still detect gateway timeout (90s) if the gateway is truly gone.
@@ -209,10 +211,8 @@ void ElectionManager::onElectionPacket(const uint8_t* buf, uint8_t len) {
                     _cooldownUntilMs = millis() + ELECTION_RECLAIM_COOLDOWN_MS;
                     _enterState(ELECT_IDLE);
 
-                    // Auto-relay: if we suppressed others but lost, we're middle priority → RELAY
-                    if (_sentSuppressDuringElection) {
-                        _promoteToRelay();
-                    }
+                    // Relay assignment is now handled by RSSI-based assignRelayByRssi()
+                    // after the gateway collects beacon data. Election losers stay LEAF.
                     _sentSuppressDuringElection = false;
                 } else {
                     Serial.printf("[%s] Coordinator noted — gateway exists\n", TAG);
@@ -369,6 +369,7 @@ void ElectionManager::_promoteToGateway() {
     _activeRole.store(NODE_ROLE_GATEWAY);
     _registry.reset();
     _harvest.abortCycle();
+    _relayAssigned = false;
 }
 
 void ElectionManager::_promoteToRelay() {
@@ -388,6 +389,77 @@ void ElectionManager::_demoteToLeaf() {
     _registry.reset();
     _activeRole.store(NODE_ROLE_LEAF);
     _sentSuppressDuringElection = false;
+    _relayAssigned = false;
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// RSSI-Based Relay Assignment
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+void ElectionManager::assignRelayByRssi(bool newNodeDiscovered) {
+    if (_relayAssigned && !newNodeDiscovered) return;
+    if (newNodeDiscovered) _relayAssigned = false;  // Re-evaluate with new topology
+
+    // Wait at least 10s after becoming gateway to collect beacons from multiple nodes
+    if (_state == ELECT_ACTING_GATEWAY &&
+        (millis() - _stateEnteredMs) < 10000) {
+        return;  // Too early — still collecting RSSI data
+    }
+
+    NodeEntry strongest;
+    if (!_registry.getStrongestLeaf(strongest)) {
+        return;  // No leaves yet — will retry on next beacon
+    }
+
+    char idStr[24];
+    snprintf(idStr, sizeof(idStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+             strongest.nodeId[0], strongest.nodeId[1], strongest.nodeId[2],
+             strongest.nodeId[3], strongest.nodeId[4], strongest.nodeId[5]);
+    Serial.printf("\n[%s] ╔══════════════════════════════════╗\n", TAG);
+    Serial.printf("[%s] ║  RSSI RELAY ASSIGN → %-11s ║\n", TAG, strongest.ssid);
+    Serial.printf("[%s] ║  RSSI: %.0f dBm                    ║\n", TAG, strongest.rssi);
+    Serial.printf("[%s] ╚══════════════════════════════════╝\n\n", TAG);
+
+    RelayAssignPacket pkt;
+    memcpy(pkt.gatewayId, _mac, 6);
+    memcpy(pkt.relayId, strongest.nodeId, 6);
+
+    uint8_t buf[RELAY_ASSIGN_PACKET_SIZE];
+    uint8_t len = pkt.serialize(buf, sizeof(buf));
+    if (len > 0) {
+        loraSendSafe(buf, len);
+        loraStartReceiveSafe();
+        // Queue retransmits (2 more, 500ms gap) for reliability
+        memcpy(_txBuf, buf, len);
+        _txLen = len;
+        _lastTxMs = millis();
+        _txRemaining = 2;
+        _txGapMs = 500;
+    }
+
+    _relayAssigned = true;
+}
+
+void ElectionManager::onRelayAssign(const uint8_t* buf, uint8_t len) {
+    RelayAssignPacket pkt;
+    if (!pkt.parse(buf, len)) return;
+
+    // Only process if we're currently a leaf
+    if (_activeRole.load() != NODE_ROLE_LEAF) return;
+
+    // Check if we're the assigned relay
+    if (memcmp(pkt.relayId, _mac, 6) != 0) return;
+
+    char gwStr[24];
+    snprintf(gwStr, sizeof(gwStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+             pkt.gatewayId[0], pkt.gatewayId[1], pkt.gatewayId[2],
+             pkt.gatewayId[3], pkt.gatewayId[4], pkt.gatewayId[5]);
+
+    Serial.printf("\n[%s] ╔══════════════════════════════════╗\n", TAG);
+    Serial.printf("[%s] ║  RSSI-ASSIGNED TO RELAY          ║\n", TAG);
+    Serial.printf("[%s] ╚══════════════════════════════════╝\n\n", TAG);
+
+    _activeRole.store(NODE_ROLE_RELAY);
 }
 
 const char* ElectionManager::stateStr() const {

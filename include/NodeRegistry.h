@@ -134,6 +134,16 @@ public:
     bool isMultiHop(const uint8_t nodeId[6]) const;
 
     /**
+     * Find the active leaf node with the strongest RSSI (for relay assignment).
+     * Only considers nodes with nodeRole == NODE_ROLE_LEAF.
+     * On RSSI tie, higher MAC priority wins.
+     *
+     * @param[out] entry  Populated with the strongest leaf's details.
+     * @return true if at least one active leaf was found.
+     */
+    bool getStrongestLeaf(NodeEntry& entry) const;
+
+    /**
      * Print registry contents to Serial for debugging.
      */
     void dump() const;

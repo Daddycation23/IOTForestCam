@@ -99,6 +99,14 @@ void taskLoRaLeafRelay(void* param) {
         // ── LoRa RX: Dispatch all packet types ───────────────
         LoRaRxResult rx;
         if (loraCheckReceiveSafe(rx)) {
+            // ── LoRa-level blocklist: drop packets from blocked senders ──
+            uint8_t senderMac[6];
+            if (extractSenderMac(rx.data, rx.length, senderMac) &&
+                serialCmd.isNodeBlocked(senderMac)) {
+                loraStartReceiveSafe();
+                continue;
+            }
+
             uint8_t pktType = getLoRaPacketType(rx.data, rx.length);
 
             switch (pktType) {
@@ -115,11 +123,18 @@ void taskLoRaLeafRelay(void* param) {
                             WiFi.macAddress(myMac);
 
                             if (electionMgr.isPromoted()) {
+                                // Skip our own beacons (relayed back to us)
+                                if (memcmp(received.nodeId, myMac, 6) == 0) break;
+
                                 if (registryLock()) {
                                     bool isNewPromoted = registry.update(received, rx.rssi);
                                     registryUnlock();
                                     if (isNewPromoted && _lastNewBeaconMs == 0) {
                                         _lastNewBeaconMs = millis();
+                                    }
+                                    // Re-evaluate relay assignment when a new node appears
+                                    if (isNewPromoted) {
+                                        electionMgr.assignRelayByRssi(true);
                                     }
                                 }
                             }
@@ -196,6 +211,9 @@ void taskLoRaLeafRelay(void* param) {
                 case PKT_TYPE_COORDINATOR:
                 case PKT_TYPE_GW_RECLAIM:
                     electionMgr.onElectionPacket(rx.data, rx.length);
+                    break;
+                case PKT_TYPE_RELAY_ASSIGN:
+                    electionMgr.onRelayAssign(rx.data, rx.length);
                     break;
 
                 default:
@@ -286,6 +304,7 @@ void taskLoRaLeafRelay(void* param) {
                 (promReactive || promMaxWait))
             {
                 _lastNewBeaconMs = 0;  // Reset for next cycle
+                electionMgr.assignRelayByRssi();
                 if (!aodvRouter.isDiscoveryPending()) {
                     aodvRouter.discoverAll();
                 }
@@ -321,6 +340,10 @@ void taskLoRaLeafRelay(void* param) {
                 lastBlockCount = curBlockCount;
                 lastRequestCount = curRequestCount;
                 deepSleepMgr.onActivity();
+                // Images have been served — sleep timer can now start after timeout
+                if (curRequestCount > 0) {
+                    deepSleepMgr.onHarvestComplete();
+                }
             }
 
             if (deepSleepMgr.shouldSleep(millis())) {
@@ -328,7 +351,10 @@ void taskLoRaLeafRelay(void* param) {
                 Serial.printf("[DeepSleep] Boot count: %lu\n", deepSleepMgr.bootCount());
 
                 // Save state for fast-path wake
-                deepSleepMgr.saveState(g_role, _apSSID);
+                // Use atomic _activeRole (updated by ElectionManager) instead of
+                // plain g_role to avoid cross-core data race on sleep save.
+                NodeRole roleToSave = static_cast<NodeRole>(_activeRole.load());
+                deepSleepMgr.saveState(roleToSave, _apSSID);
 
                 // Stop CoAP server and WiFi before sleeping
                 coapServer.stop();

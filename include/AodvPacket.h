@@ -35,7 +35,8 @@ static constexpr uint8_t PKT_TYPE_HARVEST_ACK = 0x21;
 static constexpr uint8_t PKT_TYPE_ELECTION    = 0x30;
 static constexpr uint8_t PKT_TYPE_SUPPRESS    = 0x31;
 static constexpr uint8_t PKT_TYPE_COORDINATOR = 0x32;
-static constexpr uint8_t PKT_TYPE_GW_RECLAIM  = 0x33;
+static constexpr uint8_t PKT_TYPE_GW_RECLAIM   = 0x33;
+static constexpr uint8_t PKT_TYPE_RELAY_ASSIGN = 0x34;  // Gateway assigns relay role by RSSI
 
 // ─── Wake Protocol Packet Types ──────────────────────────────
 static constexpr uint8_t PKT_TYPE_WAKE_PING       = 0x40;  // Triggers DIO1 wakeup (minimal 3-byte packet)

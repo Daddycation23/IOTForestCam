@@ -259,7 +259,7 @@ void loop() {
         } else if (firstHarvestDone) {
             const HarvestCycleStats& stats = harvestLoop.lastCycleStats();
             display.printf("Last: %u OK, %u fail\n", stats.nodesSucceeded, stats.nodesFailed);
-            display.printf("Imgs: %lu\n", stats.totalImages);
+            display.printf("Rcvd: %lu imgs\n", stats.totalImages);
         }
 
         if (hTaskLoRa) {
@@ -280,8 +280,8 @@ void loop() {
         display.println(_activeRole == NODE_ROLE_RELAY ? "Relay (AODV)" : "Leaf (AODV)");
         display.printf("AP: %s\n", _apSSID);
         display.printf("IP: %s\n", WiFi.softAPIP().toString().c_str());
-        display.printf("CoAP: %s\n", coapServer.requestCount() > 0 ? ":5683" : "OFF");
-        display.printf("Imgs: %d  LoRa:%s\n", storage.imageCount(), _loraReady ? "OK" : "NO");
+        display.printf("CoAP:%s Reqs:%lu\n", storage.imageCount() > 0 ? ":5683" : "noSD", coapServer.requestCount());
+        display.printf("Served:%lu  LoRa:%s\n", coapServer.blocksSent(), _loraReady ? "OK" : "NO");
         display.println("────────────────────");
 
         if (_relayCachedServing) {

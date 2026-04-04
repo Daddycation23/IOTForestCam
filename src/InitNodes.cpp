@@ -89,7 +89,7 @@ void initGateway() {
     WiFi.mode(WIFI_AP);
     WiFi.softAP(_gwAPSSID, AP_PASS);
     delay(100);
-    WiFi.setTxPower(WIFI_POWER_8_5dBm);
+    WiFi.setTxPower(WIFI_POWER_19_5dBm);
     IPAddress gwIP = WiFi.softAPIP();
     Serial.printf("[OK] Gateway WiFi AP: %s (pass: %s)\n", _gwAPSSID, AP_PASS);
     Serial.printf("[OK] Gateway IP: %s\n", gwIP.toString().c_str());
@@ -197,7 +197,7 @@ void initLeafRelay() {
         displayStatus("STA connect...");
         Serial.printf("[Leaf] Connecting to gateway AP: %s\n", rtcGatewaySSID);
         WiFi.mode(WIFI_STA);
-        WiFi.setTxPower(WIFI_POWER_8_5dBm);
+        WiFi.setTxPower(WIFI_POWER_19_5dBm);
         WiFi.begin(rtcGatewaySSID, AP_PASS);
 
         uint32_t connectStart = millis();
@@ -224,15 +224,15 @@ void initLeafRelay() {
         WiFi.mode(WIFI_AP);
         WiFi.softAP(_apSSID, AP_PASS);
         delay(100);
-        WiFi.setTxPower(WIFI_POWER_8_5dBm);
+        WiFi.setTxPower(WIFI_POWER_19_5dBm);
 
         IPAddress ip = WiFi.softAPIP();
         Serial.printf("[OK] WiFi AP: %s (pass: %s)\n", _apSSID, AP_PASS);
         Serial.printf("[OK] IP: %s\n", ip.toString().c_str());
     }
 
-    // ── CoAP Server (leaf only — relay uses cachedCoapServer on demand) ──
-    if (_sdReady && g_role != NODE_ROLE_RELAY) {
+    // ── CoAP Server (all nodes with SD — serves images to whoever connects) ──
+    if (_sdReady) {
         if (!coapServer.begin()) {
             displayStatus("CoAP FAILED!");
             Serial.println("[ERROR] CoAP server failed to start.");

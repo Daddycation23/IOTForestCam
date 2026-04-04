@@ -61,4 +61,28 @@ struct ElectionPacket {
     void senderIdToString(char* buf, size_t bufLen) const;
 };
 
+
+// ═══════════════════════════════════════════════════════════════
+// RELAY_ASSIGN — Gateway assigns relay role based on RSSI
+// ═══════════════════════════════════════════════════════════════
+//
+// Offset  Size  Field
+//   0      1    magic (0xFC)
+//   1      1    version (0x01)
+//   2      1    type (0x34)
+//   3      6    gatewayId (assigning gateway's MAC)
+//   9      6    relayId (target leaf MAC to promote)
+//                TOTAL: 15 bytes
+
+static constexpr uint8_t RELAY_ASSIGN_PACKET_SIZE = 15;
+
+struct RelayAssignPacket {
+    uint8_t gatewayId[6];   ///< Gateway that made this assignment
+    uint8_t relayId[6];     ///< Leaf MAC being assigned as relay
+
+    uint8_t serialize(uint8_t* buf, uint8_t maxLen) const;
+    bool parse(const uint8_t* buf, uint8_t len);
+    void relayIdToString(char* buf, size_t bufLen) const;
+};
+
 #endif // ELECTION_PACKET_H

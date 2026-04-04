@@ -107,6 +107,14 @@ void taskLoRaGateway(void* param) {
         // ── LoRa RX: dispatch packets ───────────────────────
         LoRaRxResult rx;
         if (loraCheckReceiveSafe(rx)) {
+            // ── LoRa-level blocklist: drop packets from blocked senders ──
+            uint8_t senderMac[6];
+            if (extractSenderMac(rx.data, rx.length, senderMac) &&
+                serialCmd.isNodeBlocked(senderMac)) {
+                loraStartReceiveSafe();
+                continue;
+            }
+
             uint8_t pktType = getLoRaPacketType(rx.data, rx.length);
 
             switch (pktType) {
@@ -114,6 +122,11 @@ void taskLoRaGateway(void* param) {
                 case BEACON_TYPE_BEACON_RELAY: {
                     BeaconPacket beacon;
                     if (beacon.parse(rx.data, rx.length)) {
+                        // Skip our own beacons (relayed back to us)
+                        uint8_t gwMac[6];
+                        WiFi.macAddress(gwMac);
+                        if (memcmp(beacon.nodeId, gwMac, 6) == 0) break;
+
                         bool isNew = false;
                         if (registryLock()) {
                             isNew = registry.update(beacon, rx.rssi);
@@ -121,6 +134,10 @@ void taskLoRaGateway(void* param) {
                         }
                         if (isNew && _lastNewBeaconMs == 0) {
                             _lastNewBeaconMs = millis();
+                        }
+                        // Re-evaluate relay assignment when a new node appears
+                        if (isNew) {
+                            electionMgr.assignRelayByRssi(true);
                         }
                         electionMgr.onBeacon(beacon);
 
@@ -170,6 +187,9 @@ void taskLoRaGateway(void* param) {
                 case PKT_TYPE_GW_RECLAIM:
                     electionMgr.onElectionPacket(rx.data, rx.length);
                     break;
+                case PKT_TYPE_RELAY_ASSIGN:
+                    electionMgr.onRelayAssign(rx.data, rx.length);
+                    break;
                 default:
                     log_d("Unknown LoRa packet type 0x%02X (%u bytes)", pktType, rx.length);
                     break;
@@ -208,6 +228,9 @@ void taskLoRaGateway(void* param) {
 
         if (!routeDiscoveryDone && millis() - bootMs >= ROUTE_DISCOVERY_DELAY_MS &&
             activeNodes > 0) {
+            // Phase 2: Assign relay based on RSSI before route discovery
+            electionMgr.assignRelayByRssi();
+
             Serial.println("\n[AODV] Broadcasting RREQ for all nodes (topology discovery)...");
             aodvRouter.discoverAll();
             routeDiscoveryDone = true;
@@ -226,6 +249,7 @@ void taskLoRaGateway(void* param) {
             (reactiveReady || maxWaitReady))
         {
             _lastNewBeaconMs = 0;  // Reset for next cycle
+            electionMgr.assignRelayByRssi();
             if (!aodvRouter.isDiscoveryPending()) {
                 Serial.println("\n[AODV] Pre-harvest route discovery...");
                 aodvRouter.discoverAll();

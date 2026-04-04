@@ -38,6 +38,7 @@ DeepSleepManager::DeepSleepManager()
     : _lastActivityMs(millis())
     , _harvestInProgress(false)
     , _coapBusy(false)
+    , _harvestEverCompleted(false)
 {
     rtcBootCount++;
 }
@@ -145,12 +146,19 @@ void DeepSleepManager::enterSleep() {
 bool DeepSleepManager::shouldSleep(uint32_t nowMs) const {
     // Never sleep during active operations
     if (_harvestInProgress || _coapBusy) return false;
-    // Sleep if active timeout has expired
+    // Don't sleep until images have been transferred at least once
+    if (!_harvestEverCompleted) return false;
+    // Sleep if active timeout has expired since last harvest
     return (nowMs - _lastActivityMs) >= SLEEP_ACTIVE_TIMEOUT_MS;
 }
 
 void DeepSleepManager::onActivity() {
     _lastActivityMs = millis();
+}
+
+void DeepSleepManager::onHarvestComplete() {
+    _harvestEverCompleted = true;
+    onActivity();  // Start the sleep countdown from now
 }
 
 void DeepSleepManager::setHarvestInProgress(bool inProgress) {
