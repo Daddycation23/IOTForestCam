@@ -137,6 +137,12 @@ public:
     /** Get stats from the last completed cycle. */
     const HarvestCycleStats& lastCycleStats() const { return _stats; }
 
+    /** Get cumulative stats across ALL cycles since boot. */
+    const HarvestCycleStats& cumulativeStats() const { return _cumulativeStats; }
+
+    /** Number of harvest cycles completed since boot. */
+    uint32_t cyclesCompleted() const { return _cyclesCompleted; }
+
     /** Set callback to check if a node should be skipped (blocked). */
     typedef bool (*NodeBlockedCb)(const uint8_t nodeId[6]);
     void setNodeBlockedCallback(NodeBlockedCb cb) { _nodeBlockedCb = cb; }
@@ -148,6 +154,8 @@ private:
     LoRaRadio*     _loraRadio;          ///< Optional LoRa radio (null if not set)
     HarvestState   _state;
     HarvestCycleStats _stats;
+    HarvestCycleStats _cumulativeStats;     ///< Sum across all cycles since boot
+    uint32_t          _cyclesCompleted = 0;
 
     NodeEntry      _currentNode;        ///< Node currently being harvested
     uint32_t       _stateEnteredMs;     ///< Timestamp for timeout tracking

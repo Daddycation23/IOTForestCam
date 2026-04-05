@@ -77,10 +77,40 @@ class HarvestState:
         self.last_filename = ""
 
 
+class PacketStats:
+    """Per-boot packet statistics parsed from [STATS] serial lines."""
+    def __init__(self):
+        # LoRa radio layer
+        self.lora_tx = 0
+        self.lora_rx = 0
+        self.lora_err = 0
+        # AODV
+        self.rreq_sent = 0
+        self.rreq_rcvd = 0
+        self.rrep_sent = 0
+        self.rrep_rcvd = 0
+        self.rerr_sent = 0
+        self.rerr_rcvd = 0
+        # Beacons
+        self.beacon_tx = 0
+        self.beacon_rx = 0
+        # CoAP server (leaf/relay)
+        self.coap_reqs = 0
+        self.coap_blocks = 0
+        # Harvest cumulative (gateway)
+        self.harvest_cycles = 0
+        self.harvest_imgs = 0
+        self.harvest_bytes = 0
+        self.harvest_ok = 0
+        self.harvest_fail = 0
+        self.last_update = None
+
+
 class Dashboard:
     def __init__(self):
         self.nodes: dict[str, Node] = {}
         self.harvest = HarvestState()
+        self.stats = PacketStats()
         self.boot_count = 0
         self.role = "?"
         self.lora_ok = False
@@ -386,6 +416,41 @@ def parse_line(line: str, dash: Dashboard):
         if m:
             dash.add_log(f"{BLUE}Self-copy: {m.group(1)}{RESET}")
 
+    # ── [STATS] tagged lines (printed every 5s by firmware) ──
+    m = re.search(r'\[STATS\] LoRa tx=(\d+) rx=(\d+) err=(\d+)', line)
+    if m:
+        dash.stats.lora_tx  = int(m.group(1))
+        dash.stats.lora_rx  = int(m.group(2))
+        dash.stats.lora_err = int(m.group(3))
+        dash.stats.last_update = time.time()
+
+    m = re.search(r'\[STATS\] AODV rreqT=(\d+) rreqR=(\d+) rrepT=(\d+) rrepR=(\d+) rerrT=(\d+) rerrR=(\d+)', line)
+    if m:
+        dash.stats.rreq_sent = int(m.group(1))
+        dash.stats.rreq_rcvd = int(m.group(2))
+        dash.stats.rrep_sent = int(m.group(3))
+        dash.stats.rrep_rcvd = int(m.group(4))
+        dash.stats.rerr_sent = int(m.group(5))
+        dash.stats.rerr_rcvd = int(m.group(6))
+
+    m = re.search(r'\[STATS\] Beacon tx=(\d+) rx=(\d+)', line)
+    if m:
+        dash.stats.beacon_tx = int(m.group(1))
+        dash.stats.beacon_rx = int(m.group(2))
+
+    m = re.search(r'\[STATS\] CoAP reqs=(\d+) blocks=(\d+)', line)
+    if m:
+        dash.stats.coap_reqs   = int(m.group(1))
+        dash.stats.coap_blocks = int(m.group(2))
+
+    m = re.search(r'\[STATS\] Harvest cycles=(\d+) imgs=(\d+) bytes=(\d+) ok=(\d+) fail=(\d+)', line)
+    if m:
+        dash.stats.harvest_cycles = int(m.group(1))
+        dash.stats.harvest_imgs   = int(m.group(2))
+        dash.stats.harvest_bytes  = int(m.group(3))
+        dash.stats.harvest_ok     = int(m.group(4))
+        dash.stats.harvest_fail   = int(m.group(5))
+
 
 # ─── Rendering ────────────────────────────────────────────────
 
@@ -505,6 +570,35 @@ def render(dash: Dashboard):
             elapsed = time.time() - h.start_time
             print(f"  Elapsed: {int(elapsed)}s")
 
+        print()
+
+    # ── Packet Statistics ──
+    s = dash.stats
+    if s.last_update is not None:
+        print(f"  {BOLD}Packet Stats{RESET} {DIM}(per-boot){RESET}")
+        # LoRa radio layer
+        print(f"  LoRa: TX={s.lora_tx}  RX={s.lora_rx}  "
+              f"Err={RED if s.lora_err > 0 else DIM}{s.lora_err}{RESET}")
+        # AODV breakdown
+        print(f"  AODV: RREQ T/R={s.rreq_sent}/{s.rreq_rcvd}  "
+              f"RREP T/R={s.rrep_sent}/{s.rrep_rcvd}  "
+              f"RERR T/R={s.rerr_sent}/{s.rerr_rcvd}")
+        # Beacons
+        print(f"  Beacon: TX={s.beacon_tx}  RX={s.beacon_rx}")
+        # Role-specific
+        if is_gateway:
+            if s.harvest_cycles > 0:
+                kb = s.harvest_bytes / 1024
+                print(f"  Harvest: cycles={s.harvest_cycles}  "
+                      f"imgs={GREEN}{s.harvest_imgs}{RESET}  "
+                      f"{kb:.1f}KB  "
+                      f"OK/fail={GREEN}{s.harvest_ok}{RESET}/{RED}{s.harvest_fail}{RESET}")
+            else:
+                print(f"  Harvest: {DIM}no cycles yet{RESET}")
+        else:
+            success_color = GREEN if s.coap_blocks > 0 else DIM
+            print(f"  CoAP (served): requests={s.coap_reqs}  "
+                  f"blocks={success_color}{s.coap_blocks}{RESET}")
         print()
 
     # ── Log ──

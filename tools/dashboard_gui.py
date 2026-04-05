@@ -90,6 +90,9 @@ class ForestCamDashboard(tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         self.current_image_data = None  # Store current image data for download
         self.current_image_info = None  # Store current image info
+        # Serialize CoAP operations — ESP32's CoAP server is single-threaded,
+        # concurrent requests cause state confusion mid-block-transfer
+        self._coap_busy = threading.Lock()
         self._build_widgets()
 
         # Start CoAP polling
@@ -105,11 +108,16 @@ class ForestCamDashboard(tk.Tk):
 
     async def _poll_coap_loop(self):
         while True:
-            try:
-                info = await self._fetch_info(self.coap_host)
-                self.after(0, self._update_image_list, info)
-            except Exception as e:
-                print(f"[CoAP] Poll error: {e}")
+            # Skip polling while a download is in progress — ESP32 CoAP server
+            # can't interleave /info with an ongoing block-wise /image transfer
+            if self._coap_busy.acquire(blocking=False):
+                try:
+                    info = await self._fetch_info(self.coap_host)
+                    self.after(0, self._update_image_list, info)
+                except Exception as e:
+                    print(f"[CoAP] Poll error: {e}")
+                finally:
+                    self._coap_busy.release()
             await asyncio.sleep(self.poll_interval)
 
     async def _fetch_info(self, host):
@@ -161,14 +169,29 @@ class ForestCamDashboard(tk.Tk):
         host = self.coap_host
         img_id = img_info['id']
         total_blocks = img_info['blocks']
+
+        # Skip zero-byte / zero-block images (aborted transfers)
+        if total_blocks == 0 or img_info.get('size', 0) == 0:
+            self.after(0, self._set_transfer_status,
+                       f"Skipped: {os.path.basename(img_info['name'])} (0 blocks)")
+            self.after(0, self._log_message,
+                       f"[Skip] {os.path.basename(img_info['name'])} — empty file")
+            return
+
+        # Acquire CoAP lock — wait up to 30s if another operation is running
+        got_lock = self._coap_busy.acquire(timeout=30)
+        if not got_lock:
+            self.after(0, self._set_transfer_status, "Busy: another CoAP op in progress")
+            return
+
         block_size = 1024  # Could use info['block_size']
         ctx = await aiocoap.Context.create_client_context()
         data = bytearray()
         block_num = 0
-        
+
         # Initialize UI on main thread
         self.after(0, self._init_transfer_ui, total_blocks, os.path.basename(img_info['name']))
-        
+
         try:
             while True:
                 block2_value = (block_num << 4) | 6  # SZX=6 (1024)
@@ -198,6 +221,7 @@ class ForestCamDashboard(tk.Tk):
             self.after(0, self._set_transfer_status, f"Error: {e}")
         finally:
             await ctx.shutdown()
+            self._coap_busy.release()
 
     def _init_transfer_ui(self, total_blocks, filename):
         """Initialize progress bar and status (called on main thread)"""
@@ -267,80 +291,125 @@ class ForestCamDashboard(tk.Tk):
         count = len(self.images_info)
         if not messagebox.askyesno("Download All", f"Download all {count} images to Downloads folder?"):
             return
-        
-        # Start async download in thread
+
+        # Disable buttons while batch runs; re-enable on completion
+        self._set_download_buttons_enabled(False)
+
         def run():
-            asyncio.run(self._download_all_task())
+            try:
+                asyncio.run(self._download_all_task())
+            finally:
+                self.after(0, self._set_download_buttons_enabled, True)
         threading.Thread(target=run, daemon=True).start()
+
+    def _set_download_buttons_enabled(self, enabled: bool):
+        """Enable/disable download buttons during CoAP operations."""
+        new_state = "normal" if enabled else "disabled"
+        if hasattr(self, 'download_btn') and self.current_image_data is not None:
+            self.download_btn.config(state=new_state)
+        if hasattr(self, 'download_all_btn'):
+            self.download_all_btn.config(state=new_state)
     
     async def _download_all_task(self):
         """Download all images asynchronously"""
-        downloads_path = Path.home() / "Downloads"
-        downloads_path.mkdir(exist_ok=True)
-        
-        total = len(self.images_info)
-        success_count = 0
-        failed_count = 0
-        
-        self.after(0, self._set_transfer_status, f"Downloading {total} images...")
-        
-        for idx, img_info in enumerate(self.images_info):
-            img_id = img_info['id']
-            filename = os.path.basename(img_info.get('name', f'image_{img_id}.jpg'))
-            
-            self.after(0, self._set_transfer_status, f"Downloading {idx+1}/{total}: {filename}")
-            
-            try:
-                # Fetch image via CoAP
-                import aiocoap
-                ctx = await aiocoap.Context.create_client_context()
-                data = bytearray()
-                block_num = 0
-                
-                while True:
-                    request = aiocoap.Message(
-                        code=aiocoap.GET,
-                        uri=f"coap://{self.coap_host}:5683/image/{img_id}"
-                    )
-                    request.opt.block2 = aiocoap.optiontypes.BlockOption.BlockwiseTuple(
-                        block_num, False, 6
-                    )
-                    response = await asyncio.wait_for(ctx.request(request).response, timeout=15)
-                    
-                    if response.code.is_successful():
+        # Acquire CoAP lock — hold it for the entire batch so polling and
+        # individual image-preview clicks don't interleave
+        got_lock = self._coap_busy.acquire(timeout=30)
+        if not got_lock:
+            self.after(0, self._set_transfer_status, "Busy: another CoAP op in progress")
+            return
+
+        try:
+            downloads_path = Path.home() / "Downloads"
+            downloads_path.mkdir(exist_ok=True)
+
+            total = len(self.images_info)
+            success_count = 0
+            failed_count = 0
+            skipped_count = 0
+
+            self.after(0, self._set_transfer_status, f"Downloading {total} images...")
+
+            import aiocoap
+
+            for idx, img_info in enumerate(self.images_info):
+                img_id = img_info['id']
+                filename = os.path.basename(img_info.get('name', f'image_{img_id}.jpg'))
+
+                # Skip zero-byte / zero-block images (aborted transfers)
+                if img_info.get('blocks', 0) == 0 or img_info.get('size', 0) == 0:
+                    skipped_count += 1
+                    self.after(0, self._log_message, f"[Skip] {filename} — empty file")
+                    continue
+
+                self.after(0, self._set_transfer_status,
+                           f"Downloading {idx+1}/{total}: {filename}")
+
+                ctx = None
+                try:
+                    ctx = await aiocoap.Context.create_client_context()
+                    data = bytearray()
+                    block_num = 0
+
+                    while True:
+                        request = aiocoap.Message(
+                            code=aiocoap.GET,
+                            uri=f"coap://{self.coap_host}:5683/image/{img_id}"
+                        )
+                        request.opt.block2 = aiocoap.optiontypes.BlockOption.BlockwiseTuple(
+                            block_num, False, 6
+                        )
+                        response = await asyncio.wait_for(
+                            ctx.request(request).response, timeout=15)
+
+                        if not response.code.is_successful():
+                            raise Exception(f"CoAP error: {response.code}")
+
                         data.extend(response.payload)
+                        # aiocoap may auto-assemble block-wise transfers; if there
+                        # is no block2 option or more=False, we're done
                         if response.opt.block2 and response.opt.block2.more:
                             block_num += 1
                         else:
                             break
-                    else:
-                        raise Exception(f"CoAP error: {response.code}")
-                
-                await ctx.shutdown()
-                
-                # Save file
-                save_path = downloads_path / filename
-                counter = 1
-                base_name = Path(filename).stem
-                ext = Path(filename).suffix
-                while save_path.exists():
-                    save_path = downloads_path / f"{base_name}_{counter}{ext}"
-                    counter += 1
-                
-                save_path.write_bytes(data)
-                success_count += 1
-                
-                self.after(0, self._log_message, f"[Download] Saved {filename} ({len(data)} B)")
-                
-            except Exception as e:
-                failed_count += 1
-                self.after(0, self._log_message, f"[Download] Failed {filename}: {e}")
-        
-        # Show summary
-        summary = f"Download complete: {success_count} succeeded, {failed_count} failed"
-        self.after(0, self._set_transfer_status, summary)
-        self.after(0, messagebox.showinfo, "Download Complete", 
-                   f"Downloaded {success_count}/{total} images to:\n{downloads_path}")
+
+                    if len(data) == 0:
+                        raise Exception("empty payload")
+
+                    # Save file with collision-safe naming
+                    save_path = downloads_path / filename
+                    counter = 1
+                    base_name = Path(filename).stem
+                    ext = Path(filename).suffix
+                    while save_path.exists():
+                        save_path = downloads_path / f"{base_name}_{counter}{ext}"
+                        counter += 1
+
+                    save_path.write_bytes(data)
+                    success_count += 1
+                    self.after(0, self._log_message,
+                               f"[Download] Saved {filename} ({len(data)} B)")
+
+                except Exception as e:
+                    failed_count += 1
+                    self.after(0, self._log_message,
+                               f"[Download] Failed {filename}: {e}")
+                finally:
+                    if ctx is not None:
+                        try:
+                            await ctx.shutdown()
+                        except Exception:
+                            pass
+
+            summary = (f"Done: {success_count} OK, {failed_count} failed, "
+                       f"{skipped_count} skipped")
+            self.after(0, self._set_transfer_status, summary)
+            self.after(0, messagebox.showinfo, "Download Complete",
+                       f"{success_count}/{total} downloaded\n"
+                       f"{skipped_count} skipped (empty files)\n"
+                       f"{failed_count} failed\n\nSaved to: {downloads_path}")
+        finally:
+            self._coap_busy.release()
     
     def _log_message(self, msg):
         """Add message to event log"""

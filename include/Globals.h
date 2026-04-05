@@ -86,6 +86,10 @@ extern std::atomic<bool>       _relayCachedServing;
 extern std::atomic<uint32_t>   _relayCachedStartMs;
 extern std::atomic<uint32_t>   _lastNewBeaconMs;
 
+// ─── Per-boot beacon counters ──────────────────────────────
+extern uint32_t g_beaconTxCount;
+extern uint32_t g_beaconRxCount;
+
 // ─── Timing constants ──────────────────────────────────────
 static constexpr uint32_t BEACON_INTERVAL_MS       = 30000;
 static constexpr uint32_t BEACON_JITTER_MS         = 2000;

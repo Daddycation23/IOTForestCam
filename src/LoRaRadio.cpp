@@ -125,6 +125,7 @@ bool LoRaRadio::send(const uint8_t* data, uint8_t length) {
 
     _radio.finishTransmit();
 
+    _txCount++;
     log_d("%s: TX done (%u bytes, waited %ums)", TAG, length, waitMs);
     return true;
 }
@@ -172,6 +173,7 @@ bool LoRaRadio::checkReceive(LoRaRxResult& result) {
     int state = _radio.readData(buf, len);
 
     if (state != RADIOLIB_ERR_NONE) {
+        _rxErrorCount++;
         log_d("%s: readData returned %d (false positive or CRC error)", TAG, state);
         _radio.startReceive();  // Re-enter RX
         return false;
@@ -183,6 +185,7 @@ bool LoRaRadio::checkReceive(LoRaRxResult& result) {
     result.rssi  = _radio.getRSSI();
     result.snr   = _radio.getSNR();
     _lastRSSI    = result.rssi;
+    _rxCount++;
 
     log_d("%s: RX packet (%u bytes, RSSI=%.0f dBm, SNR=%.1f dB)",
           TAG, result.length, result.rssi, result.snr);

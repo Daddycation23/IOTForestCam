@@ -42,6 +42,7 @@ void AodvRouter::begin(const uint8_t myId[6]) {
     _rreqIdCounter = 0;
     _initialized = true;
     _routeMutex = xSemaphoreCreateMutex();
+    _stats = AodvStats{};
 
     // Clear route table
     for (uint8_t i = 0; i < AODV_MAX_ROUTES; i++) {
@@ -123,6 +124,8 @@ void AodvRouter::handleRREQ(const RreqPacket& rreq, float rssi) {
     // Don't process our own RREQs
     if (_isSelf(rreq.origId)) return;
 
+    _stats.rreqReceived++;
+
     // ── Deduplication check ─────────────────────────────────
     if (_isRreqSeen(rreq.origId, rreq.rreqId)) {
         log_d("%s: Dropping duplicate RREQ (id=%lu)", TAG, rreq.rreqId);
@@ -180,6 +183,7 @@ void AodvRouter::handleRREQ(const RreqPacket& rreq, float rssi) {
         if (len > 0) {
             // Deferred send to avoid blocking Core 0
             _deferBroadcast(buf, len, random(AODV_RREQ_BACKOFF_MIN, AODV_RREQ_BACKOFF_MAX));
+            _stats.rrepSent++;
         }
         return;
     }
@@ -205,6 +209,7 @@ void AodvRouter::handleRREQ(const RreqPacket& rreq, float rssi) {
         uint8_t len = rrep.serialize(buf, sizeof(buf));
         if (len > 0) {
             _deferBroadcast(buf, len, random(AODV_RREQ_BACKOFF_MIN, AODV_RREQ_BACKOFF_MAX));
+            _stats.rrepSent++;
         }
         return;
     }
@@ -224,6 +229,7 @@ void AodvRouter::handleRREQ(const RreqPacket& rreq, float rssi) {
     uint8_t len = fwd.serialize(buf, sizeof(buf));
     if (len > 0) {
         _deferBroadcast(buf, len, random(AODV_RREQ_BACKOFF_MIN, AODV_RREQ_BACKOFF_MAX));
+        _stats.rreqSent++;  // Count rebroadcast as sent
         Serial.printf("[%s] RREQ rebroadcast (hops=%u)\n", TAG, newHopCount);
     }
 }
@@ -237,6 +243,8 @@ void AodvRouter::handleRREP(const RrepPacket& rrep) {
 
     // Don't process our own RREPs (we are the destination that generated it)
     if (_isSelf(rrep.destId) && rrep.hopCount == 0) return;
+
+    _stats.rrepReceived++;
 
     uint8_t newHopCount = rrep.hopCount + 1;
 
@@ -296,6 +304,7 @@ void AodvRouter::handleRREP(const RrepPacket& rrep) {
     uint8_t len = fwd.serialize(buf, sizeof(buf));
     if (len > 0) {
         _broadcast(buf, len);
+        _stats.rrepSent++;
         Serial.printf("[%s] RREP forwarded toward originator (hops=%u)\n", TAG, newHopCount);
 
         // Mark the forward route as relayed — we're an intermediate hop
@@ -317,6 +326,8 @@ void AodvRouter::handleRREP(const RrepPacket& rrep) {
 
 void AodvRouter::handleRERR(const RerrPacket& rerr) {
     if (!_initialized) return;
+
+    _stats.rerrReceived++;
 
     bool affected = false;
 
@@ -352,6 +363,7 @@ void AodvRouter::handleRERR(const RerrPacket& rerr) {
         uint8_t len = rerr.serialize(buf, sizeof(buf));
         if (len > 0) {
             _broadcast(buf, len);
+            _stats.rerrSent++;
             Serial.printf("[%s] RERR rebroadcast\n", TAG);
         }
     }
@@ -398,6 +410,7 @@ void AodvRouter::discoverRoute(const uint8_t destId[6]) {
     uint8_t len = rreq.serialize(buf, sizeof(buf));
     if (len > 0) {
         _broadcast(buf, len);
+        _stats.rreqSent++;
 
         char idStr[24];
         snprintf(idStr, sizeof(idStr), "%02X:%02X:%02X:%02X:%02X:%02X",
@@ -461,6 +474,7 @@ void AodvRouter::notifyLinkBreak(const uint8_t brokenNodeId[6]) {
         uint8_t len = rerr.serialize(buf, sizeof(buf));
         if (len > 0) {
             _broadcast(buf, len);
+            _stats.rerrSent++;
         }
     }
 }

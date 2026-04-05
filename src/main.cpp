@@ -59,6 +59,10 @@ const char* AP_SSID_PREFIX = "ForestCam";
 const char* AP_PASS        = "forestcam123";
 char        _apSSID[32];
 
+// Per-boot beacon counters (reset on reboot; not in RTC)
+uint32_t                g_beaconTxCount = 0;
+uint32_t                g_beaconRxCount = 0;
+
 std::atomic<bool>       _loraReady{false};
 std::atomic<bool>       _gwLoraReady{false};
 std::atomic<bool>       _relayBusy{false};
@@ -225,6 +229,28 @@ void loop() {
         }
     }
 
+    // ── Periodic [STATS] serial output for dashboard (every 5 s) ──
+    static uint32_t lastStatsMs = 0;
+    if (millis() - lastStatsMs >= 5000) {
+        lastStatsMs = millis();
+        const AodvStats& as = aodvRouter.stats();
+        Serial.printf("[STATS] LoRa tx=%lu rx=%lu err=%lu\n",
+                      loraRadio.txCount(), loraRadio.rxCount(), loraRadio.rxErrorCount());
+        Serial.printf("[STATS] AODV rreqT=%lu rreqR=%lu rrepT=%lu rrepR=%lu rerrT=%lu rerrR=%lu\n",
+                      as.rreqSent, as.rreqReceived, as.rrepSent, as.rrepReceived,
+                      as.rerrSent, as.rerrReceived);
+        Serial.printf("[STATS] Beacon tx=%lu rx=%lu\n", g_beaconTxCount, g_beaconRxCount);
+        if (g_role == NODE_ROLE_GATEWAY || electionMgr.isPromoted()) {
+            const HarvestCycleStats& cs = harvestLoop.cumulativeStats();
+            Serial.printf("[STATS] Harvest cycles=%lu imgs=%lu bytes=%lu ok=%u fail=%u\n",
+                          harvestLoop.cyclesCompleted(), cs.totalImages, cs.totalBytes,
+                          cs.nodesSucceeded, cs.nodesFailed);
+        } else {
+            Serial.printf("[STATS] CoAP reqs=%lu blocks=%lu\n",
+                          coapServer.requestCount(), coapServer.blocksSent());
+        }
+    }
+
     // ── OLED Update (every 2 s) ──────────────────────────────
     static uint32_t lastDisplayMs = 0;
     if (millis() - lastDisplayMs < 2000) {
@@ -262,11 +288,7 @@ void loop() {
             display.printf("Rcvd: %lu imgs\n", stats.totalImages);
         }
 
-        if (hTaskLoRa) {
-            display.printf("Stk L:%u H:%u\n",
-                           uxTaskGetStackHighWaterMark(hTaskLoRa),
-                           hTaskHarvest ? uxTaskGetStackHighWaterMark(hTaskHarvest) : 0);
-        }
+        display.printf("LoRa T:%lu R:%lu\n", loraRadio.txCount(), loraRadio.rxCount());
         display.display();
 
     } else {
@@ -281,8 +303,8 @@ void loop() {
         display.printf("AP: %s\n", _apSSID);
         display.printf("IP: %s\n", WiFi.softAPIP().toString().c_str());
         display.printf("CoAP:%s Reqs:%lu\n", storage.imageCount() > 0 ? ":5683" : "noSD", coapServer.requestCount());
-        display.printf("Served:%lu  LoRa:%s\n", coapServer.blocksSent(), _loraReady ? "OK" : "NO");
-        display.println("────────────────────");
+        display.printf("Served:%lu LoRa:%s\n", coapServer.blocksSent(), _loraReady ? "OK" : "NO");
+        display.printf("LoRa T:%lu R:%lu\n", loraRadio.txCount(), loraRadio.rxCount());
 
         if (_relayCachedServing) {
             display.fillRect(0, 48, 128, 16, SSD1306_BLACK);

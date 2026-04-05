@@ -137,6 +137,14 @@ public:
     /** Put radio into low-power standby (RC oscillator). Call before WiFi. */
     void standby();
 
+    /** @name Per-boot packet counters (reset on reboot). */
+    /**@{*/
+    uint32_t txCount()      const { return _txCount; }
+    uint32_t rxCount()      const { return _rxCount; }
+    uint32_t rxErrorCount() const { return _rxErrorCount; }
+    void     resetCounters() { _txCount = 0; _rxCount = 0; _rxErrorCount = 0; }
+    /**@}*/
+
 private:
     SPIClass      _loraSPI;
     SPISettings   _loraSPISettings;
@@ -144,6 +152,11 @@ private:
     SX1280        _radio;
     bool          _initialized;
     float         _lastRSSI;
+
+    // Per-boot packet counters
+    uint32_t      _txCount      = 0;
+    uint32_t      _rxCount      = 0;
+    uint32_t      _rxErrorCount = 0;
 };
 
 #endif // LORA_RADIO_H

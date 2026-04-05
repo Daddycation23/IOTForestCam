@@ -96,6 +96,7 @@ void taskLoRaGateway(void* param) {
             if (len > 0) {
                 loraSendSafe(buf, len);
                 loraStartReceiveSafe();
+                g_beaconTxCount++;
                 Serial.println("[GW] Beacon TX (liveness)");
             }
 
@@ -122,6 +123,9 @@ void taskLoRaGateway(void* param) {
                 case BEACON_TYPE_BEACON_RELAY: {
                     BeaconPacket beacon;
                     if (beacon.parse(rx.data, rx.length)) {
+                        // Count any valid beacon heard (including our own echo, before filtering)
+                        g_beaconRxCount++;
+
                         // Skip our own beacons (relayed back to us)
                         uint8_t gwMac[6];
                         WiFi.macAddress(gwMac);

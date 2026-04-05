@@ -89,6 +89,7 @@ void taskLoRaLeafRelay(void* param) {
             uint8_t len = beacon.serialize(buf, sizeof(buf));
             if (len > 0) {
                 loraSendSafe(buf, len);
+                g_beaconTxCount++;
                 Serial.printf("[LoRa] Beacon TX (%u bytes) — %s, %u images\n",
                               len, beacon.ssid, beacon.imageCount);
             }
@@ -114,6 +115,8 @@ void taskLoRaLeafRelay(void* param) {
                 case BEACON_TYPE_BEACON_RELAY: {
                     BeaconPacket received;
                     if (received.parse(rx.data, rx.length)) {
+                        g_beaconRxCount++;
+
                         // All nodes must see beacons for gateway detection
                         electionMgr.onBeacon(received);
 

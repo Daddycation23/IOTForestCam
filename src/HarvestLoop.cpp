@@ -886,6 +886,15 @@ void HarvestLoop::_doDone() {
         loraStartReceiveSafe();
     }
 
+    // Accumulate into cumulative stats (across all cycles since boot)
+    _cumulativeStats.nodesAttempted += _stats.nodesAttempted;
+    _cumulativeStats.nodesSucceeded += _stats.nodesSucceeded;
+    _cumulativeStats.nodesFailed    += _stats.nodesFailed;
+    _cumulativeStats.totalImages    += _stats.totalImages;
+    _cumulativeStats.totalBytes     += _stats.totalBytes;
+    _cumulativeStats.totalTimeMs    += _stats.totalTimeMs;
+    _cyclesCompleted++;
+
     Serial.println("\n╔══════════════════════════════════════╗");
     Serial.println("║     HARVEST CYCLE COMPLETE           ║");
     Serial.printf( "║     Nodes: %u attempted, %u OK, %u fail ║\n",

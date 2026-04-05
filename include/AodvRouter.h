@@ -60,6 +60,17 @@ struct RouteEntry {
  */
 typedef void (*RouteDiscoveredCb)(const uint8_t destId[6], uint8_t hopCount);
 
+// ─── Per-boot AODV Packet Counters ─────────────────────────
+
+struct AodvStats {
+    uint32_t rreqSent      = 0;
+    uint32_t rreqReceived  = 0;
+    uint32_t rrepSent      = 0;
+    uint32_t rrepReceived  = 0;
+    uint32_t rerrSent      = 0;
+    uint32_t rerrReceived  = 0;
+};
+
 // ─── AodvRouter Class ──────────────────────────────────────
 
 class AodvRouter {
@@ -130,6 +141,10 @@ public:
     /** Check if a route discovery is currently pending. */
     bool isDiscoveryPending() const { return _discoveryPending; }
 
+    /** Per-boot AODV packet counters. */
+    const AodvStats& stats() const { return _stats; }
+    void resetStats() { _stats = AodvStats{}; }
+
 private:
     LoRaRadio& _radio;
     uint8_t    _myId[6];
@@ -171,6 +186,9 @@ private:
     // ── Relay Detection ─────────────────────────────────────
     bool    _isRelaying;        ///< True if forwarding at least one route
     uint8_t _relayingForCount;  ///< Number of active relayed routes
+
+    // ── Per-boot Packet Counters ────────────────────────────
+    AodvStats _stats;
 
     // ── Route Table Helpers ─────────────────────────────────
     int8_t _findRoute(const uint8_t destId[6]) const;
