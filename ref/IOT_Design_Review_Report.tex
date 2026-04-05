@@ -3,11 +3,13 @@
 % ─── Packages ─────────────────────────────────────────────────
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
+\usepackage{lmodern}
 \usepackage{geometry}
 \usepackage{titlesec}
 \usepackage{enumitem}
 \usepackage{graphicx}
 \usepackage{xcolor}
+\PassOptionsToPackage{hyphens}{url}
 \usepackage{hyperref}
 \usepackage{booktabs}
 \usepackage{array}
@@ -15,6 +17,17 @@
 \usepackage{parskip}
 \usepackage{fancyhdr}
 \usepackage{lastpage}
+\usepackage[htt]{hyphenat}
+\usepackage{microtype}
+
+% Allow typewriter font to break across lines at common punctuation
+\makeatletter
+\def\UrlBreaks{\do\/\do\-\do\_\do\.\do\=\do\?\do\&\do\#\do\:\do\@}
+\makeatother
+
+% Allow LaTeX more flexibility on difficult paragraphs to avoid overfull hboxes
+\sloppy
+\emergencystretch=3em
 
 % ─── Page geometry ────────────────────────────────────────────
 \geometry{margin=2.5cm}
@@ -50,7 +63,7 @@
     \vspace*{1cm}
     {\Large \textbf{Project: [CSC2106] Real-Time File Transfer System using CoAP}} \\[0.5cm]
     {\large Date: 18 March 2026} \\[0.3cm]
-    {\large Team Name: BugattiFerrariLamborghini} \\[1cm]
+    {\large Group 02: BugattiFerrariLamborghini} \\[1cm]
 
     \begin{tabular}{|p{7cm}|p{4cm}|}
         \hline
@@ -150,22 +163,25 @@ The current state of environmental monitoring is transitioning from offline, man
 
 \begin{table}[ht]
 \centering
-\small
+\footnotesize
 \caption{Comparison of candidate communications technologies.}
 \label{tab:comms-tech}
-\begin{tabular}{@{}lrrrrll@{}}
+\setlength{\tabcolsep}{4pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}lllllll@{}}
 \toprule
 \textbf{Technology} & \textbf{Range} & \textbf{Throughput} & \textbf{Idle} & \textbf{Payload} & \textbf{Band} & \textbf{Infra.} \\
 \midrule
-LoRa 2.4\,GHz (SX1280) [9]  & 2--10\,km & 0.5--202\,kbps   & $<$20\,$\mu$A  & 255\,B  & ISM 2.4\,GHz      & None (P2P/mesh) \\
-LoRaWAN sub-GHz [3]         & 2--15\,km & $<$5\,kbps       & $<$20\,$\mu$A  & 222\,B  & ISM sub-GHz       & LoRaWAN gw+NS   \\
-Wi-Fi 802.11 (ESP32) [2]    & 50--100\,m & 10--150\,Mbps   & 80--200\,mA    & 1500\,B & ISM 2.4/5\,GHz    & Access point    \\
-BLE 5.x [12]                & 30--100\,m & 1--2\,Mbps      & 10--40\,$\mu$A & 247\,B  & ISM 2.4\,GHz      & None (P2P/mesh) \\
-Zigbee / 802.15.4 [11]      & 10--100\,m & 250\,kbps       & 20--50\,$\mu$A & 127\,B  & ISM 2.4\,GHz      & Coordinator     \\
-LTE-M / NB-IoT              & Cellular   & 0.2--1\,Mbps    & 100--200\,mA*  & 1500\,B & Licensed cellular & Carrier/SIM     \\
-Sigfox                      & 10--40\,km & 0.1\,kbps       & $<$20\,$\mu$A  & 12\,B   & ISM sub-GHz       & Sigfox network  \\
+LoRa 2.4\,GHz (SX1280) [9]  & 2--10\,km  & 0.5--202\,kbps & $<$20\,$\mu$A  & 255\,B  & ISM 2.4\,GHz      & None (P2P/mesh) \\
+LoRaWAN sub-GHz [3]         & 2--15\,km  & $<$5\,kbps     & $<$20\,$\mu$A  & 222\,B  & ISM sub-GHz       & LoRaWAN gw+NS   \\
+Wi-Fi 802.11 (ESP32) [2]    & 50--100\,m & 10--150\,Mbps  & 80--200\,mA    & 1500\,B & ISM 2.4/5\,GHz    & Access point    \\
+BLE 5.x [12]                & 30--100\,m & 1--2\,Mbps     & 10--40\,$\mu$A & 247\,B  & ISM 2.4\,GHz      & None (P2P/mesh) \\
+Zigbee / 802.15.4 [11]      & 10--100\,m & 250\,kbps      & 20--50\,$\mu$A & 127\,B  & ISM 2.4\,GHz      & Coordinator     \\
+LTE-M / NB-IoT              & Cellular   & 0.2--1\,Mbps   & 100--200\,mA*  & 1500\,B & Licensed cellular & Carrier/SIM     \\
+Sigfox                      & 10--40\,km & 0.1\,kbps      & $<$20\,$\mu$A  & 12\,B   & ISM sub-GHz       & Sigfox network  \\
 \bottomrule
-\end{tabular}
+\end{tabular}%
+}
 
 \vspace{0.3em}
 {\footnotesize *Transmit current; PSM idle can be lower but requires carrier PSM support and still draws $>$1\,mA during paging windows.}
