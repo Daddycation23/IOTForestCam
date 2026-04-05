@@ -4,9 +4,4 @@
 .vscode/launch.json
 .vscode/ipch
 
-
-/ref
-
-.claude
-CLAUDE.md
 tools/__pycache__/
