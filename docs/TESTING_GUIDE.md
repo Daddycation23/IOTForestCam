@@ -6,7 +6,12 @@ Reference for running and verifying all test suites in the ForestCam project.
 
 ## 1. Test Overview
 
-The project has **17 test suites** with a total of **152 test cases**, all running on the `native` platform (host-side, no hardware required).
+The project has test suites running on the `native` platform (host-side, no hardware required).
+
+> ~~**17 test suites**, **152 test cases**~~ *(obsolete, pre-Feature 20 baseline)*
+> **Current: 19 suites, 181 test cases** (Feature 20 added `test_resume_offset` with 21 cases and `test_auto_relay` with 8 cases on the `finishingUp` branch, 2026-03-29).
+
+The table below lists the original 17-suite baseline; the two additional suites added by Feature 20 are not shown here but pass on every build.
 
 | # | Suite                       | Tests | Description                          |
 |---|-----------------------------|-------|--------------------------------------|
@@ -39,7 +44,10 @@ The project has **17 test suites** with a total of **152 test cases**, all runni
 pio test -e native
 ```
 
-This runs all 17 suites on the host machine without any hardware.
+This runs all test suites on the host machine without any hardware.
+
+> ~~17 suites (152 tests)~~ *(obsolete, pre-Feature 20 baseline)*
+> **Current: 19 suites, 181 tests** (Feature 20 added 21 resume-offset tests + 8 auto-relay election tests on the `finishingUp` branch, 2026-03-29).
 
 ### Single Test Suite
 

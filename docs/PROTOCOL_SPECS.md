@@ -56,8 +56,11 @@ All LoRa packets share a 3-byte header:
 | 0x31 | SUPPRESS      | 0x01    |
 | 0x32 | COORDINATOR   | 0x01    |
 | 0x33 | GW_RECLAIM    | 0x01    |
+| 0x34 | RELAY_ASSIGN  | 0x02    |
 | 0x40 | WAKE_PING     | 0x01    |
 | 0x41 | WAKE_BEACON_REQ | 0x01  |
+
+> `RELAY_ASSIGN` (0x34) added by Feature 25 (2026-04-04): RSSI-based relay assignment. See `include/ElectionPacket.h` for the 15-byte `RelayAssignPacket` layout (magic + version + type + gatewayId + relayId).
 
 ### Node Role Values
 

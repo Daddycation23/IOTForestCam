@@ -288,6 +288,51 @@
   7. **DISPLAY — OLED:** Gateway shows `Rcvd: X imgs` (transferred only); leaf shows `Served:X` + `CoAP::5683/noSD`
 - **Key Files:** `src/TaskLoRaGateway.cpp`, `src/TaskLoRaLeafRelay.cpp`, `src/TaskRelayHarvest.cpp`, `src/InitNodes.cpp`, `src/main.cpp`, `include/DeepSleepManager.h`, `src/DeepSleepManager.cpp`
 
+### 30. Packet Statistics Tracker & Dashboard GUI Concurrency (2026-04-05)
+- **Branch:** `main`, commit `ce766d1`
+- **Description:** Per-boot counters across every protocol layer plus a parseable serial log line for dashboard consumption. Also fixes a concurrency bug in the GUI dashboard where the 5s `/info` poller interrupted active image downloads on the single-threaded ESP32 CoAP server.
+- **Firmware:**
+  1. `LoRaRadio` — `_txCount`, `_rxCount`, `_rxErrorCount` incremented in `send()` and `checkReceive()` success/error paths
+  2. `AodvRouter` — new `AodvStats` struct tracks rreq/rrep/rerr sent+received across handlers and link-break propagation
+  3. Global beacon TX/RX counters incremented in both gateway and leaf/relay task dispatch
+  4. `HarvestLoop::_cumulativeStats` accumulates images, bytes, and cycles; exposed via `cumulativeStats()` and `cyclesCompleted()`
+  5. Periodic `[STATS]` serial output every 5s in `loop()` — one line per counter group, dashboard-parseable
+  6. OLED display: gateway shows `Rcvd: N imgs` + `LoRa T:N R:N`; leaf/relay shows `Served:N LoRa:OK` + `LoRa T:N R:N`
+- **Dashboard (terminal, `tools/dashboard.py`):** New Packet Stats panel with LoRa TX/RX/Err, AODV RREQ/RREP/RERR T/R breakdown, beacon counts, and role-aware harvest or CoAP stats.
+- **Dashboard (GUI, `tools/dashboard_gui.py`):**
+  1. `threading.Lock` serialises every CoAP operation so the 5s `/info` poller cannot interrupt block-wise image downloads mid-transfer
+  2. Skip zero-byte / zero-block images (aborted transfer artifacts) in `_fetch_image_task` and `_download_all_task`
+  3. Disable Download Selected / Download All buttons during active batch downloads to prevent overlapping clicks
+  4. Improved error logging and summary dialog with skipped count
+- **Key Files:** `include/AodvRouter.h`, `include/Globals.h`, `include/HarvestLoop.h`, `include/LoRaRadio.h`, `src/AodvRouter.cpp`, `src/HarvestLoop.cpp`, `src/LoRaRadio.cpp`, `src/TaskLoRaGateway.cpp`, `src/TaskLoRaLeafRelay.cpp`, `src/main.cpp`, `tools/dashboard.py`, `tools/dashboard_gui.py`
+
+### 31. Ghost Relay Demotion on Gateway Failover (2026-04-05)
+- **Branch:** `main`, commit `a778e86`
+- **Author:** JoshuaDui
+- **Description:** When a gateway died and a new gateway took over via Bully election, old relays remained stuck advertising `NODE_ROLE_RELAY` in their beacons. The new gateway's `getStrongestLeaf()` filters by LEAF role, so ghost relays were invisible to the RSSI reassignment path — a new relay would be picked alongside the ghosts, leaving multiple concurrent relays after every failover.
+- **Fix:** Two complementary triggers in `ElectionManager`:
+  1. **Timeout-based** — in `tick()`, when `_activeRole` is RELAY and `isGatewayMissing()` returns true, demote to LEAF (handles case where the assigning gateway goes silent before a new one takes over).
+  2. **Beacon-based** — track `_assignedByGateway[6]` MAC in `onRelayAssign()`, and in `onBeacon()` when a gateway beacon arrives from a different MAC than the stored assigner, demote immediately (handles case where the new gateway's first beacon refreshes `_lastGatewayBeaconMs` before the 60 s timeout could fire).
+  3. Also clears `_assignedByGateway` in `_promoteToGateway()` and `_demoteToLeaf()` for consistent state across transitions.
+- **Result:** The demoted relay's next beacon advertises `ROLE_LEAF`, allowing the new gateway's `assignRelayByRssi(newNodeDiscovered=true)` to pick it fresh via the existing RSSI path.
+- **Key Files:** `include/ElectionManager.h` (+1 line), `src/ElectionManager.cpp` (+37 lines)
+
+### 32. Measurement Tooling and First Lab Capture (2026-04-05)
+- **Branch:** `main`, commits `0dbc7d8` (packet loss analyzer) and `e75aa99` (measurement report generator)
+- **Description:** Two Python host-side tools consume the `[STATS]` serial lines from Feature 30 and produce structured measurement reports suitable for the design review.
+- **Tools:**
+  - `tools/packet_loss_analyzer.py` — parses per-node `[STATS]` deltas across a capture window, computes mesh-wide beacon and LoRa PDR using `expected_RX = total_TX × (N-1)`, and summarises per-node RREQ/RREP/RERR counts and CoAP request/block totals.
+  - `tools/measure_report.py` — generates a full Markdown measurement report covering PDR, CoAP Block2 goodput distribution, end-to-end transfer time bucketed by image size, AODV RREQ→RREP latency, Bully election convergence, beacon-reactive harvest trigger latency, full harvest cycle time, and Fletcher-16 integrity rate.
+- **First Lab Captures:** Committed under `tools/reports/` — `measurements_20260405_231334.md` (4-node 5-min run) and `packet_loss_20260405_224641.txt` (4-node 3-min run), plus raw per-port logs. These are the first quantitative measurements feeding the design review's Results section.
+- **Headline Values (5-min 4-node run):**
+  - Beacon PDR: 100%
+  - LoRa all-layer PDR: 74.51%
+  - CoAP Block2 1-hop goodput: mean 10.29 KB/s (range 7.0–14.9, N=21 images)
+  - Bully election convergence: 25.9 s
+  - Beacon-reactive harvest trigger: 15.16 s
+  - Fletcher-16 mismatch: 0/42
+- **Key Files:** `tools/measure_report.py` (new), `tools/packet_loss_analyzer.py` (new), `tools/reports/*` (new captures)
+
 ---
 
 ## In Progress
@@ -345,7 +390,10 @@ The SX1280 LoRa (2.4 GHz with PA) has significantly longer range than the ESP32-
 
 **Mitigation (implemented 2026-04-03):** WiFi-fail relay fallback. When direct WiFi connect times out (25s), the gateway searches the node registry for another active node to act as a relay. If found, it sends a `HARVEST_CMD` to that node via LoRa, which then performs store-and-forward harvest. This bridges the gap between the 1-hop LoRa route (which doesn't indicate WiFi unreachability) and the existing multi-hop relay path (which only triggers for `hopCount > 1`).
 
-**Remaining limitation:** If NO other node is available to relay (e.g., only 2 nodes in the network and the leaf is out of WiFi range), the node is still marked as failed. Increasing WiFi TX power from `WIFI_POWER_8_5dBm` to `WIFI_POWER_19_5dBm` could also help at the cost of higher power consumption.
+**Remaining limitation:** If NO other node is available to relay (e.g., only 2 nodes in the network and the leaf is out of WiFi range), the node is still marked as failed.
+
+> ~~Increasing WiFi TX power from `WIFI_POWER_8_5dBm` to `WIFI_POWER_19_5dBm` could also help at the cost of higher power consumption.~~ *(obsolete, pre-Feature 26)*
+> **Current:** Feature 26 (corridor test bugfixes, 2026-04-04) raised the default TX power to `WIFI_POWER_19_5dBm` (90 mW), extending usable WiFi range roughly 3–4×. Combined with the Feature 24 WiFi-fail relay fallback and the Feature 25 RSSI-based relay assignment, the remaining scenarios where a LoRa-reachable leaf cannot be harvested are limited to 2-node networks with no available relay.
 
 ### Relay ACK Timeout Too Short for Large Payloads
 The `HARVEST_RELAY_TIMEOUT_MS` (120s) covers only the relay→leaf download phase. If a leaf has >5MB of images (~100-200s at CoAP throughput), the relay exceeds the timeout. The gateway abandons the wait, the relay completes downloading with no consumer, and cached images expire after `RELAY_CACHED_TIMEOUT_MS`.
