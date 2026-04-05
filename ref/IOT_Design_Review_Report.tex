@@ -290,7 +290,15 @@ The following security mechanisms are designed but not yet implemented:
 \section{Implementation (Prototype and Testing)}
 % (Word Limit: 750 words)
 
-\textit{Note: The final implementation differs from the originally proposed design in two key areas: (1) ESP-Mesh-Lite for Wi-Fi mesh routing was replaced with AODV routing over the LoRa control plane to enable deep sleep power management, and (2) LoRa DIO1 hardware interrupt wake proved unreliable on the LILYGO T3-S3 V1.2 hardware and was replaced with RTC timer-based wake. These deviations and their justifications are detailed in the Deployment Challenges subsection.}
+\textit{Note: The final implementation differs from the originally proposed design in several key areas to address technical constraints discovered during development:}
+
+\begin{itemize}
+    \item \textit{\textbf{Mesh Routing:} ESP-Mesh-Lite for Wi-Fi mesh routing was replaced with AODV routing over the LoRa control plane. Justification: ESP-Mesh-Lite requires all nodes to remain continuously awake, fundamentally incompatible with the deep sleep power management objective (<10 µA idle current).}
+    \item \textit{\textbf{Power Management:} LoRa DIO1 hardware interrupt wake proved unreliable on the LILYGO T3-S3 V1.2 hardware and was replaced with RTC timer-based wake (180-second intervals). Justification: The SX1280 loses receive capability during ESP32-S3 deep sleep due to GPIO state loss on the PA control lines (RXEN/TXEN).}
+    \item \textit{\textbf{Gateway Architecture:} The gateway now runs a persistent Wi-Fi AP instead of sequentially connecting to individual leaf APs. Justification: This eliminates WiFi hopping overhead, enables simultaneous leaf connections, and aligns with the timer-based wake approach.}
+\end{itemize}
+
+\textit{These deviations and their technical justifications are detailed in the Deployment Challenges subsection below.}
 
 \subsection{Prototyping and Development Tools}
 
@@ -354,32 +362,83 @@ The prototype is deployed in a laboratory environment for bench-testing to verif
 
     \item \changed{\textbf{Challenge 4: LoRa Blackout During Harvest.} The original single-threaded \texttt{loop()} architecture blocked LoRa reception for 50--120\,s during Wi-Fi harvest. Mitigation: FreeRTOS dual-core task separation pins LoRa/AODV/election to Core 0 and Wi-Fi/CoAP harvest to Core 1, allowing concurrent operation.}
 
-    \item \changed{\textbf{Challenge 5: LoRa/Wi-Fi Range Mismatch.} The SX1280 LoRa radio (with PA) has significantly longer range than the ESP32-S3's Wi-Fi, particularly at the reduced TX power setting of 8.5\,dBm used for power savings. A leaf node may be within LoRa beacon range (registered as a direct 1-hop node) but beyond Wi-Fi range for CoAP image download. Currently, the gateway retries direct Wi-Fi connection each cycle with no automatic fallback to relay harvesting, because AODV routes are based on LoRa reachability rather than Wi-Fi range. Future mitigation could include automatic relay promotion after repeated Wi-Fi failures or RSSI-based range estimation.}
+    \item \changed{\textbf{Challenge 5: LoRa/Wi-Fi Range Mismatch (Partially Mitigated).} The SX1280 LoRa radio (with PA) has significantly longer range than the ESP32-S3's Wi-Fi, particularly at the reduced TX power setting of 8.5\,dBm used for power savings. A leaf node may be within LoRa beacon range (registered as a direct 1-hop node) but beyond Wi-Fi range for CoAP image download. \textbf{Current Implementation:} The gateway retries direct Wi-Fi connection each cycle with no automatic fallback to relay harvesting, because AODV routes are based on LoRa reachability rather than Wi-Fi range. Manual relay assignment (via HARVEST\_CMD) can be configured for known out-of-range nodes. \textbf{Not Implemented:} Automatic relay promotion after repeated Wi-Fi failures or RSSI-based range estimation remain as future enhancements.}
 
     \item \changed{\textbf{Challenge 6: ESP32 SoftAP Concurrent STA Limit.} The ESP32-S3 SoftAP supports approximately 4 concurrent STA connections. In the gateway-as-AP architecture, leaves that wake simultaneously may exceed this limit. Mitigation: the 180-second timer wake with MAC-based jitter staggers leaf connections, reducing the probability of simultaneous association requests.}
 \end{enumerate}
 
 \subsection{Testing Process for Reliability and Functionality}
 
-Testing progresses from isolated unit tests to full system integration.
+Testing progresses from isolated unit tests to full system integration in a laboratory environment.
 
 \begin{enumerate}
     \item \textbf{Unit Testing:} \changed{152 unit tests across 17 test suites run on the PlatformIO native environment, covering election state machines, harvest FSM transitions, CoAP Block2 pipelining, beacon v2 serialization, node registry operations, relay harvest protocols, AODV route expiry, deep sleep guards, and thread safety verification.}
 
     \item \textbf{Integration Testing:} \changed{The interplay between LoRa, Wi-Fi, AODV, and FreeRTOS tasks is evaluated. Thread-safety of shared variables (\texttt{std::atomic}) and queue sizing (\texttt{sizeof(HarvestCmdPacket)}) were validated through code review and runtime testing.}
 
-    \item \textbf{System-Level Testing:} A complete 3-node topology (1 Gateway, 1 Relay, 1 Leaf) is deployed. \changed{The auto-role negotiation allows testing without manual role assignment: all nodes boot as LEAF, and the highest-priority node self-promotes to gateway after a 15-second grace period.}
+    \item \textbf{System-Level Testing:} A complete 3-node topology (1 Gateway, 1 Relay, 1 Leaf) is deployed in laboratory conditions. \changed{The auto-role negotiation allows testing without manual role assignment: all nodes boot as LEAF, and the highest-priority node self-promotes to gateway after a 15-second grace period. Testing validates basic image transfer from leaf to gateway via direct WiFi connection and via relay store-and-forward.}
+\end{enumerate}
+
+\subsection{Testing Gaps and Limitations}
+
+The following areas were not tested in the current prototype and require future validation:
+
+\begin{enumerate}
+    \item \textbf{Security Testing:} No penetration testing or security audits were conducted. LoRa replay attacks, packet injection, and WPA2-PSK key strength were not validated. AES-128 encryption is not implemented.
+    
+    \item \textbf{Quantitative Power Consumption:} Deep sleep current ($<$10 µA) is estimated from datasheet values. No actual multimeter measurements over extended sleep/wake cycles were conducted to validate battery life projections.
+    
+    \item \textbf{Multi-Hop WiFi Stress Testing:} Relay store-and-forward was tested with a single 3-node chain (Gateway→Relay→Leaf). Multi-level mesh topologies (3+ hops) and concurrent relay operations were not tested.
+    
+    \item \textbf{Scalability Testing:} Only 3-node deployments were tested. The 8-node NodeRegistry limit and ESP32 SoftAP concurrent connection limit (4 clients) were not validated under load.
+    
+    \item \textbf{Edge Cases and Stress Conditions:} Simultaneous leaf wake-up, rapid gateway failover, network partition recovery, SD card failure handling, and sustained high-throughput transfers (10+ images per cycle) were not systematically tested.
+    
+    \item \textbf{Environmental Testing:} All testing occurred indoors in a controlled laboratory setting. Outdoor range, interference, foliage attenuation, and temperature extremes were not evaluated.
 \end{enumerate}
 
 \subsection{Evaluation Metrics and Benchmarks}
 
-The project's success is quantitatively evaluated against the following performance benchmarks:
+\textbf{Verified Measurements:}
 
 \begin{enumerate}
-    \item \textbf{Power Consumption:} Deep Sleep current under 100\,$\mu$A. \changed{The implemented deep sleep with SX1280 RX achieves $<$10\,$\mu$A idle current, well below the target.}
-    \item \textbf{Packet Delivery Ratio (PDR):} $>$95\% after application-layer retries. \changed{Fletcher-16 checksum verification confirms end-to-end data integrity with no observed corruption.}
-    \item \textbf{End-to-End Latency:} \changed{The total time from timer wake to image transfer completion. Measured via serial log timestamps showing wake→announce→harvest→sleep cycle duration.}
-    \item \textbf{Mesh Recovery Time:} During a live transmission, a Relay Node is manually powered off. The system is evaluated on recovery time via \changed{AODV RERR propagation and route re-discovery}.
+    \item \textbf{Data Integrity:} Fletcher-16 checksum verification confirms end-to-end data integrity with no observed corruption across multiple image transfers in laboratory testing.
+    
+    \item \textbf{Functional Operation:} CoAP Block-Wise Transfer successfully delivers complete JPEG images (tested with files ranging 50 kB to 5 MB) from leaf nodes to gateway via both direct WiFi and relay store-and-forward paths in 3-node laboratory topology.
+    
+    \item \textbf{Auto-Role Negotiation:} Bully election successfully promotes highest-priority node to gateway role within 15-30 seconds of boot. Demotion and re-election verified when active gateway is powered off.
+\end{enumerate}
+
+\textbf{Estimated / Not Quantified:}
+
+\begin{enumerate}
+    \item \textbf{Power Consumption:} Deep sleep idle current estimated at $<$10 µA based on ESP32-S3 and SX1280 datasheet values. No multimeter measurements conducted. Active power draw (WiFi + LoRa + SD) estimated at 150-250 mA but not measured.
+    
+    \item \textbf{End-to-End Latency:} Total time from timer wake to image transfer completion observed qualitatively via serial logs but not quantitatively benchmarked with timestamps. Transfer duration varies with image size and network conditions.
+    
+    \item \textbf{Packet Delivery Ratio:} Application-layer retries (3 attempts, 2-second timeout) provide reliability, but PDR percentage not measured across sustained transfers.
+    
+    \item \textbf{Mesh Recovery Time:} AODV RERR propagation and route re-discovery observed during manual relay power-off, but recovery latency not quantified.
+    
+    \item \textbf{Multi-Hop Performance:} Relay store-and-forward validated functionally but per-hop latency and throughput degradation not measured.
+\end{enumerate}
+
+\subsection{Features Not Implemented in Current Prototype}
+
+The following features were part of the original design proposal but are not implemented in the current prototype:
+
+\begin{enumerate}
+    \item \textbf{Python Gateway Dashboard:} The planned laptop-based Python application for real-time image visualization, network health monitoring, and per-node image galleries was not implemented. Images are accessed via physical SD card removal or serial file transfer.
+    
+    \item \textbf{Queue-Based / TDMA Scheduling:} The gateway-managed transmission queue with time-division slots was not implemented. The current system uses sequential harvest (one node at a time) which provides basic congestion avoidance without formal scheduling.
+    
+    \item \textbf{AES-128 LoRa Encryption:} LoRa control plane packets are transmitted in cleartext without cryptographic authentication. Only WPA2-PSK secures the Wi-Fi data plane.
+    
+    \item \textbf{LoRa DIO1 Hardware Wake:} External interrupt wake via LoRa DIO1 was attempted but proved unreliable due to hardware limitations. Only RTC timer-based wake (180s intervals) is functional.
+    
+    \item \textbf{Automatic Relay Promotion:} The system does not automatically promote relay nodes when direct Wi-Fi connections fail. Manual relay assignment via HARVEST\_CMD is supported but requires operator intervention.
+    
+    \item \textbf{Field Testing:} Deployment and testing have been conducted exclusively in laboratory environments. Field testing in simulated off-grid environments is planned as future work.
 \end{enumerate}
 
 \newpage
@@ -459,25 +518,39 @@ The following summarizes the implementation progress of core features against th
 
 \subsection{Scalability and Network Performance}
 
-\forecast{} The system architecture inherently supports scalability through its AODV-based routing and sequential harvest approach. The gateway's NodeRegistry supports up to 8 discovered nodes, and the AODV route table accommodates 12 entries with a maximum mesh depth of 3 hops, consistent with the proposal's network assumptions. Adding additional leaf nodes requires no firmware changes as new nodes are automatically discovered via LoRa beacons. However, scaling beyond 8 nodes would require expanding the NodeRegistry capacity. Network performance is expected to degrade linearly with additional hops, as each relay node introduces Wi-Fi connection setup latency ($\sim$5--15 seconds per hop) during the harvest cycle.
+\textbf{[Forecasted — Not Validated in Testing]}
+
+The system architecture supports scalability through its AODV-based routing and sequential harvest approach. The gateway's NodeRegistry supports up to 8 discovered nodes, and the AODV route table accommodates 12 entries with a maximum mesh depth of 3 hops. Adding additional leaf nodes requires no firmware changes as new nodes are automatically discovered via LoRa beacons. However, scaling beyond 8 nodes would require expanding the NodeRegistry capacity. \changed{Only 3-node topologies (1 gateway + 1 relay + 1 leaf) were tested in the laboratory. Multi-hop chains beyond 2 hops, concurrent relay operations, and 8-node deployments were not validated.} Network performance is expected to degrade linearly with additional hops, as each relay node introduces Wi-Fi connection setup latency ($\sim$5--15 seconds per hop) during the harvest cycle, but this has not been quantitatively measured beyond a single relay hop.
 
 \subsection{Key Performance Metrics}
 
-\textbf{[Verified]}
+\textbf{[Verified — Laboratory Testing]}
 
-\textbf{Packet Delivery Ratio:} The CoAP Block-Wise Transfer implementation includes application-layer retransmission with 3 retries and a \changed{2-second} timeout per block. During bench testing of direct (1-hop) image transfers, the system achieves reliable delivery of complete JPEG images across multiple transfer sessions. The Fletcher-16 checksum verification confirms end-to-end data integrity with no observed corruption.
+\begin{itemize}
+    \item \textbf{Packet Delivery Ratio:} The CoAP Block-Wise Transfer implementation includes application-layer retransmission with 3 retries and a 2-second timeout per block. During laboratory testing of direct (1-hop) image transfers in controlled indoor environment, the system achieves reliable delivery of complete JPEG images (50 kB to 5 MB) across multiple transfer sessions. The Fletcher-16 checksum verification confirms end-to-end data integrity with no observed corruption. \changed{Quantitative PDR percentage not measured.}
 
-\textbf{Data Throughput:} Each CoAP block carries 1024 bytes of image payload within the 1500-byte Wi-Fi MTU limit, preventing IP fragmentation. \changed{Pipelined requests with a window of 3 reduce round-trip overhead, improving effective throughput over the baseline sequential approach.}
+    \item \textbf{Data Throughput:} Each CoAP block carries 1024 bytes of image payload within the 1500-byte Wi-Fi MTU limit, preventing IP fragmentation. Pipelined requests with a window of 3 reduce round-trip overhead, improving effective throughput over the baseline sequential approach. \changed{Actual throughput in kbps not benchmarked.}
 
-\textbf{Power Consumption:} \changed{Deep sleep with SX1280 in RX mode achieves $<$10\,$\mu$A idle current, meeting the $<$100\,$\mu$A target. Active operation (Wi-Fi + LoRa + SD) draws approximately 150--250\,mA. The RTC memory fast-path boot reduces wake-to-ready time by skipping the role selection menu.}
+    \item \textbf{Functional Validation:} Auto-role negotiation via Bully election completes within 15-30 seconds of boot. Gateway failover (manual power-off) triggers successful re-election. CoAP Block2 transfer successfully delivers complete images via both direct WiFi and relay store-and-forward in 3-node laboratory topology.
+\end{itemize}
 
-\textbf{[Forecasted]}
+\textbf{[Estimated — Not Measured]}
 
-\textbf{End-to-End Latency:} For a single-hop transfer, latency is dominated by Wi-Fi connection setup ($\sim$5--15 seconds) plus the CoAP block transfer time. For a 2--5\,MB image at 1024 bytes per block, approximately 2,000--5,000 blocks are required, resulting in a forecasted transfer time of 30--90 seconds per image depending on network conditions. Multi-hop transfers via relay add additional Wi-Fi connection overhead per hop.
+\begin{itemize}
+    \item \textbf{Power Consumption:} Deep sleep with SX1280 in RX mode estimated at $<$10\,$\mu$A idle current based on component datasheets, meeting the $<$100\,$\mu$A target. Active operation (Wi-Fi + LoRa + SD) estimated at 150--250\,mA. \changed{No multimeter measurements conducted over extended sleep/wake cycles. Battery life projections remain unvalidated.}
+
+    \item \textbf{End-to-End Latency:} For a single-hop transfer, latency is dominated by Wi-Fi connection setup ($\sim$5--15 seconds observed in serial logs) plus the CoAP block transfer time. For a 2--5\,MB image at 1024 bytes per block, approximately 2,000--5,000 blocks are required. \changed{Transfer duration observed qualitatively via serial output but not quantitatively measured with timestamps. Estimated 30--90 seconds per image depending on network conditions, but actual timing data not collected.} Multi-hop transfers via relay add additional Wi-Fi connection overhead per hop, but per-hop latency not quantified.
+\end{itemize}
 
 \subsection{Comparison with Similar IoT Solutions}
 
-\forecast{} Compared to pure LoRa image transmission systems [10], which occupy the frequency band for several minutes per image, this hybrid approach completes transfers in under 2 minutes over Wi-Fi while keeping the LoRa channel free for control signaling. Compared to standard Wi-Fi mesh solutions that require continuous operation, the implemented sleep-wake architecture reduces idle power consumption by orders of magnitude ($<$10\,$\mu$A vs. $\sim$150\,mA). The current prototype validates both the core data pipeline and the power efficiency advantage.
+\textbf{[Theoretical Comparison — No Empirical Benchmarking]}
+
+Compared to pure LoRa image transmission systems [10], which occupy the frequency band for several minutes per image, this hybrid approach is designed to complete transfers in under 2 minutes over Wi-Fi while keeping the LoRa channel free for control signaling. \changed{Direct performance comparison with [10] was not conducted — no side-by-side benchmarking of transfer time or spectrum occupancy.}
+
+Compared to standard Wi-Fi mesh solutions that require continuous operation, the implemented sleep-wake architecture reduces idle power consumption by orders of magnitude (estimated $<$10\,$\mu$A vs. typical $\sim$150\,mA for active WiFi mesh). \changed{This power advantage is based on datasheet calculations and has not been validated through actual current measurements or battery lifetime testing.}
+
+The current prototype validates the core data pipeline functionality (CoAP Block2 transfer, AODV routing, auto-role negotiation) but does not provide quantitative scalability or efficiency comparisons with alternative IoT architectures.
 
 \subsection{Alignment with Initial Objectives}
 
@@ -532,15 +605,35 @@ LoRa beacon reception is subject to interference and signal fading, resulting in
 \section{Conclusion}
 % (Word Limit: 250 words)
 
-\changed{Note: The writing in this section reflects the current state of implementation. As the project progresses, the conclusion and future work will change as needed.}
+\subsection{Achieved Outcomes}
 
-This project set out to resolve the ``Bandwidth-Range-Power Trilemma'' in off-grid environmental monitoring by developing a hybrid IoT mesh network that decouples low-power LoRa control signaling from high-bandwidth Wi-Fi data transfer. The most important finding from the current prototype is that the core data pipeline of LoRa beacon discovery, AODV multi-hop routing, and CoAP Block-Wise Transfer over Wi-Fi functions reliably for transferring large JPEG images (2--5\,MB) across a multi-node network without memory exhaustion on the constrained ESP32-S3 microcontrollers. The storage-driven file reading pipeline validates that 1024-byte chunked streaming from SD card to network buffer is a viable approach for constrained embedded devices.
+This project developed a hybrid LoRa + WiFi mesh network prototype that successfully demonstrates the core technical approach for decoupling low-power control signaling from high-bandwidth data transfer on ESP32-S3 microcontrollers. The most important validated finding is that CoAP Block-Wise Transfer (1024-byte blocks) over WiFi, combined with AODV multi-hop routing over LoRa, can reliably transfer JPEG images (2--5 MB) across a 3-node laboratory topology without memory exhaustion.
 
-The project directly addresses the real-world problem of data latency in remote wildlife monitoring, where traditional camera traps require weeks of physical retrieval. By enabling automated, event-triggered image harvesting over a self-forming mesh network, this system has potential applications in wildlife conservation, wildfire early detection, and agricultural monitoring in areas lacking cellular infrastructure.
+The implemented system achieves the following verified capabilities: (1) auto-role negotiation via Bully election with 15-second startup grace period, (2) timer-based deep sleep with 180-second wake intervals and RTC memory state persistence, (3) relay store-and-forward for out-of-range leaf nodes, (4) Fletcher-16 checksum verification for end-to-end data integrity, (5) FreeRTOS dual-core task separation eliminating 50--120s LoRa blackouts during harvest, and (6) beacon-reactive harvest reducing trigger latency from 180s fixed cycles to <15s after leaf detection.
 
-This project contributes to the broader IoT field by demonstrating that dual-radio architectures using commodity ESP32 hardware can achieve reliable multi-hop file transfer without cloud dependencies or commercial LPWAN infrastructure. The CoAP block-wise approach and AODV routing over LoRa provide reusable patterns for any constrained IoT device needing to transmit large payloads in infrastructure-less environments.
+The gateway-as-AP architecture enables simultaneous leaf connections, replacing the originally proposed sequential WiFi hopping. AODV routing replaces ESP-Mesh-Lite to achieve deep sleep compatibility. Timer wake replaces the unreliable DIO1 hardware interrupt, maintaining functionality despite hardware limitations.
 
-\changed{Recommended future work includes: (1) developing the Python gateway dashboard for real-time image reconstruction and network health monitoring, (2) adding AES-128 encryption to the LoRa control plane to prevent replay attacks, (3) conducting quantitative power consumption benchmarking in a simulated outdoor deployment environment, and (4) self-healing relay fallback, where a leaf that fails its direct Wi-Fi connection to the gateway falls back to AP mode, allowing the gateway to detect the unreachable node via LoRa beacons and dispatch a relay for store-and-forward harvesting.}
+This prototype demonstrates that commodity ESP32 hardware can perform reliable multi-hop file transfer in infrastructure-less environments, providing a foundation for remote environmental monitoring applications where cellular connectivity is unavailable.
+
+\subsection{Limitations and Future Work}
+
+The following capabilities were designed but not implemented or validated in the current prototype:
+
+\begin{enumerate}
+    \item \textbf{Security Hardening:} AES-128 LoRa encryption and security penetration testing are required before field deployment.
+    
+    \item \textbf{Power Consumption Validation:} Quantitative multimeter measurements over extended sleep/wake cycles are needed to validate the estimated $<$10\,$\mu$A idle current and battery life projections.
+    
+    \item \textbf{Scalability Testing:} Multi-hop chains beyond 2 hops, concurrent relay operations, and deployments with $>$3 nodes require validation.
+    
+    \item \textbf{Environmental Testing:} Outdoor range, foliage attenuation, temperature extremes, and sustained field deployments remain untested.
+    
+    \item \textbf{Python Gateway Dashboard:} Real-time image reconstruction and network health monitoring tools are planned for future development.
+    
+    \item \textbf{Self-Healing Relay Fallback:} Automatic relay promotion when direct WiFi connection fails would improve resilience in sparse topologies.
+\end{enumerate}
+
+The implemented system provides a functional proof-of-concept for the hybrid dual-radio architecture. Transitioning from laboratory prototype to deployable wildlife monitoring solution requires the validation and hardening work outlined above.
 
 \newpage
 
