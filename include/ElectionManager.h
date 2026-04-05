@@ -119,6 +119,7 @@ private:
     uint32_t _cooldownUntilMs;
     bool     _sentSuppressDuringElection;
     bool     _relayAssigned;                     // Prevents re-assignment per gateway cycle
+    uint8_t  _assignedByGateway[6];              // MAC of gateway that assigned us as relay (zero if not assigned)
 
     void _enterState(ElectionState newState);
     void _tickIdle();

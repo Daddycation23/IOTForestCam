@@ -21,6 +21,7 @@ ElectionManager::ElectionManager(LoRaRadio& radio, NodeRegistry& registry,
 {
     memset(_mac, 0, 6);
     memset(_txBuf, 0, sizeof(_txBuf));
+    memset(_assignedByGateway, 0, 6);
 }
 
 void ElectionManager::begin(const uint8_t mac[6], NodeRole originalRole, bool gatewayKnownFromRtc) {
@@ -62,6 +63,20 @@ void ElectionManager::tick() {
 
     _tickTxRetransmit();
 
+    // ── Ghost-relay demotion ────────────────────────────────
+    // If we're acting as a relay but the gateway that assigned us has been
+    // silent for too long, demote back to LEAF so the next gateway can pick
+    // fresh relays without us lingering as a stuck ROLE_RELAY in beacons.
+    if (_state == ELECT_IDLE &&
+        _activeRole.load() == NODE_ROLE_RELAY &&
+        isGatewayMissing()) {
+        Serial.printf("\n[%s] ╔══════════════════════════════════╗\n", TAG);
+        Serial.printf("[%s] ║  Gateway gone — RELAY → LEAF     ║\n", TAG);
+        Serial.printf("[%s] ╚══════════════════════════════════╝\n\n", TAG);
+        _activeRole.store(NODE_ROLE_LEAF);
+        _relayAssigned = false;
+    }
+
     switch (_state) {
         case ELECT_IDLE:            _tickIdle();           break;
         case ELECT_ELECTION_START:  _tickElectionStart();  break;
@@ -88,6 +103,25 @@ void ElectionManager::onBeacon(const BeaconPacket& beacon) {
         // Cache gateway SSID for leaf-initiated STA connection on next wake
         strncpy(rtcGatewaySSID, beacon.ssid, 31);
         rtcGatewaySSID[31] = '\0';
+
+        // ── Ghost-relay detection ──────────────────────────────
+        // If we're a relay and receive a gateway beacon from a gateway that is
+        // NOT the one that assigned us, our assigner is gone and a new gateway
+        // has taken over. Demote to LEAF so the new gateway can reassign via RSSI.
+        if (_activeRole.load() == NODE_ROLE_RELAY) {
+            bool hasAssigner = (_assignedByGateway[0] | _assignedByGateway[1] |
+                                _assignedByGateway[2] | _assignedByGateway[3] |
+                                _assignedByGateway[4] | _assignedByGateway[5]) != 0;
+            if (hasAssigner && memcmp(beacon.nodeId, _assignedByGateway, 6) != 0) {
+                Serial.printf("\n[%s] ╔══════════════════════════════════╗\n", TAG);
+                Serial.printf("[%s] ║  New gateway detected — demoting ║\n", TAG);
+                Serial.printf("[%s] ║  RELAY → LEAF                    ║\n", TAG);
+                Serial.printf("[%s] ╚══════════════════════════════════╝\n\n", TAG);
+                _activeRole.store(NODE_ROLE_LEAF);
+                _relayAssigned = false;
+                memset(_assignedByGateway, 0, 6);
+            }
+        }
 
         if (_state == ELECT_ACTING_GATEWAY) {
             uint32_t otherPriority = ElectionPacket::macToPriority(beacon.nodeId);
@@ -370,6 +404,7 @@ void ElectionManager::_promoteToGateway() {
     _registry.reset();
     _harvest.abortCycle();
     _relayAssigned = false;
+    memset(_assignedByGateway, 0, 6);
 }
 
 void ElectionManager::_promoteToRelay() {
@@ -390,6 +425,7 @@ void ElectionManager::_demoteToLeaf() {
     _activeRole.store(NODE_ROLE_LEAF);
     _sentSuppressDuringElection = false;
     _relayAssigned = false;
+    memset(_assignedByGateway, 0, 6);
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -460,6 +496,7 @@ void ElectionManager::onRelayAssign(const uint8_t* buf, uint8_t len) {
     Serial.printf("[%s] ╚══════════════════════════════════╝\n\n", TAG);
 
     _activeRole.store(NODE_ROLE_RELAY);
+    memcpy(_assignedByGateway, pkt.gatewayId, 6);
 }
 
 const char* ElectionManager::stateStr() const {
