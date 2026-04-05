@@ -1,0 +1,47 @@
+======================================================================
+IOT Forest Cam — Packet Loss Analysis Report
+Generated: 2026-04-05 22:46:41
+Capture duration: 180s (3.0 min)
+Nodes observed: 4
+======================================================================
+
+Per-node deltas (final − first [STATS] sample)
+----------------------------------------------------------------------
+  Port     Role     MAC                 LoRa TX  LoRa RX  Bcn TX  Bcn RX  Samples
+  --------------------------------------------------------------------
+  COM10    RELAY    DC:54:75:E4:85:60         9       50       5      39       27
+  COM12    RELAY    ?                        25       45       6      24       35
+  COM13    GATEWAY  DC:54:75:E4:80:E4        43       33       6      24       17
+  COM9     RELAY    DC:54:75:E4:86:CC         9       41       5      36       26
+
+AODV control-plane deltas
+----------------------------------------------------------------------
+  Port       RREQ T   RREQ R   RREP T   RREP R
+  --------------------------------------------
+  COM10           0        2        2        0
+  COM12           0        2        3        1
+  COM13           2        0        0        4
+  COM9            0        0        0        0
+
+Packet loss summary (mesh-wide)
+----------------------------------------------------------------------
+  Formula:        expected_RX = total_TX × (N−1), loss = 1 − actual_RX / expected_RX
+  Node count N:   4
+
+  BEACON layer (broadcast, every node should hear all):
+    Total beacons sent     : 22
+    Expected RX across mesh: 66
+    Actual RX across mesh  : 123
+    Loss rate              : 0.00%
+
+  LoRa radio layer (includes beacons + AODV + election):
+    Total LoRa TX          : 86
+    Expected RX across mesh: 258
+    Actual RX across mesh  : 169
+    Loss rate              : 34.50%
+
+Data-plane activity (CoAP over WiFi)
+----------------------------------------------------------------------
+  Leaf    COM9: 204 requests, 195 blocks served
+
+======================================================================
