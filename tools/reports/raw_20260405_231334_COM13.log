@@ -1,0 +1,634 @@
+1775401714.374	[Boot] Reset reason: Power-on (boot #1)
+1775401714.375	[RoleConfig] Auto-negotiation mode — starting as LEAF
+1775401715.901	[Role] Booting as: LEAF (auto-negotiate)
+1775401715.902	[RTOS] All primitives initialized
+1775401715.926	====================================
+1775401715.927	  IOT Forest Cam — Leaf (LoRa+CoAP)
+1775401715.927	  FreeRTOS + AODV Routing Enabled
+1775401715.928	====================================
+1775401716.453	[  5422][W][sd_diskio.cpp:186] sdCommand(): token error [0] 0x6
+1775401716.459	[  5428][W][sd_diskio.cpp:516] ff_sd_initialize(): GO_IDLE_STATE failed
+1775401716.465	[  5434][E][sd_diskio.cpp:806] sdcard_mount(): f_mount failed: (3) The physical drive cannot work
+1775401716.474	[  5443][W][StorageReader.cpp:70] begin(): StorageReader: SD mount attempt 1/5 failed — retrying...
+1775401716.684	[  5653][W][sd_diskio.cpp:186] sdCommand(): token error [0] 0x13
+1775401716.690	[  5659][W][sd_diskio.cpp:516] ff_sd_initialize(): GO_IDLE_STATE failed
+1775401716.697	[  5666][E][sd_diskio.cpp:806] sdcard_mount(): f_mount failed: (3) The physical drive cannot work
+1775401716.705	[  5675][W][sd_diskio.cpp:186] sdCommand(): token error [0] 0x10
+1775401716.711	[  5680][W][StorageReader.cpp:70] begin(): StorageReader: SD mount attempt 2/5 failed — retrying...
+1775401717.127	[  6090][W][sd_diskio.cpp:186] sdCommand(): token error [0] 0x4
+1775401717.128	[  6096][W][sd_diskio.cpp:516] ff_sd_initialize(): GO_IDLE_STATE failed
+1775401717.133	[  6103][E][sd_diskio.cpp:806] sdcard_mount(): f_mount failed: (3) The physical drive cannot work
+1775401717.144	[  6112][W][sd_diskio.cpp:186] sdCommand(): token error [0] 0x7
+1775401717.148	[  6117][W][StorageReader.cpp:70] begin(): StorageReader: SD mount attempt 3/5 failed — retrying...
+1775401717.758	[  6727][W][sd_diskio.cpp:186] sdCommand(): token error [0] 0x70
+1775401717.764	[  6733][W][sd_diskio.cpp:516] ff_sd_initialize(): GO_IDLE_STATE failed
+1775401717.771	[  6740][E][sd_diskio.cpp:806] sdcard_mount(): f_mount failed: (3) The physical drive cannot work
+1775401717.780	[  6749][W][StorageReader.cpp:70] begin(): StorageReader: SD mount attempt 4/5 failed — retrying...
+1775401718.589	[  7558][W][sd_diskio.cpp:186] sdCommand(): token error [0] 0x6
+1775401718.595	[  7564][W][sd_diskio.cpp:516] ff_sd_initialize(): GO_IDLE_STATE failed
+1775401718.603	[  7571][E][sd_diskio.cpp:806] sdcard_mount(): f_mount failed: (3) The physical drive cannot work
+1775401718.610	[  7580][W][sd_diskio.cpp:180] sdCommand(): crc error
+1775401718.715	[  7685][W][sd_diskio.cpp:186] sdCommand(): token error [0] 0x44
+1775401718.722	[  7690][W][StorageReader.cpp:70] begin(): StorageReader: SD mount attempt 5/5 failed — retrying...
+1775401719.731	[  8699][E][StorageReader.cpp:76] begin(): StorageReader: SD mount FAILED after 5 attempts — check wiring / card format (FAT32)
+1775401719.767	[WARN] SD card mount failed. CoAP server will not start.
+1775401719.767	       Check: SD card inserted? FAT32? /images/ folder with .jpg files?
+1775401720.303	[OK] WiFi AP: ForestCam-80E4 (pass: forestcam123)
+1775401720.304	[OK] IP: 192.168.4.1
+1775401720.305	[WARN] CoAP server skipped — no SD card available
+1775401720.331	[  9299][I][LoRaRadio.cpp:52] begin(): LoRaRadio: Pin check: DIO1(GPIO9)=0, BUSY(GPIO36)=1, CS(GPIO7)=1
+1775401720.341	[  9308][I][LoRaRadio.cpp:56] begin(): LoRaRadio: Init attempt 1/3
+1775401720.398	[  9366][I][LoRaRadio.cpp:72] begin(): LoRaRadio: SX1280 BUSY released after 2 ms
+1775401720.418	[  9384][I][LoRaRadio.cpp:80] begin(): LoRaRadio: Initializing SX1280 at 2400.0 MHz, SF9, BW812.5 kHz...
+1775401720.430	[  9399][I][LoRaRadio.cpp:92] begin(): LoRaRadio: SX1280 ready (attempt 1)
+1775401720.436	[OK] LoRa beacon TX + RX enabled (AODV routing)
+1775401720.437	[AODV] Initialized, nodeId=DC:54:75:E4:80:E4, seqNum=1
+1775401720.438	[Election] Grace period jitter: 2996 ms (ends at 27403 ms)
+1775401720.439	[Election] begin: role=LEAF priority=0xE480E475 electionId=9407
+1775401720.464	[RTOS] Tasks created — Core 0: LoRa, Core 1: CoAP Server
+1775401720.465	[STATS] LoRa tx=0 rx=0 err=0
+1775401720.466	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401720.467	[STATS] Beacon tx=0 rx=0
+1775401720.467	[STATS] CoAP reqs=0 blocks=0
+1775401720.525	[LoRa] Beacon TX (15 bytes) — ForestCam-80E4, 0 images
+1775401725.544	[STATS] LoRa tx=1 rx=0 err=0
+1775401725.546	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401725.547	[STATS] Beacon tx=1 rx=0
+1775401725.547	[STATS] CoAP reqs=0 blocks=0
+1775401730.598	[STATS] LoRa tx=1 rx=0 err=0
+1775401730.598	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401730.599	[STATS] Beacon tx=1 rx=0
+1775401730.599	[STATS] CoAP reqs=0 blocks=0
+1775401735.678	[STATS] LoRa tx=1 rx=0 err=0
+1775401735.680	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401735.680	[STATS] Beacon tx=1 rx=0
+1775401735.681	[STATS] CoAP reqs=0 blocks=0
+1775401738.435	[Election] Grace period expired, no gateway — starting election
+1775401738.435	[Election] -> ELECTION_START
+1775401738.497	[Election] Backoff: 2147 ms
+1775401738.498	[Election] -> WAITING
+1775401740.704	[Election] Backoff expired — broadcasting COORDINATOR
+1775401740.705	[Election] -> PROMOTED
+1775401740.714	��═════════════════╗
+1775401740.715	[Election] ║  PROMOTED TO ACTING GATEWAY      ║
+1775401740.717	[Election] ╚══════════════════════════════════╝
+1775401740.718	[Registry] Reset — all slots cleared
+1775401740.718	[Election] -> ACTING_GATEWAY
+1775401740.719	[ 29685][E][vfs_api.cpp:204] mkdir(): File system is not mounted
+1775401740.733	[Main] Role changed: LEAF -> GATEWAY
+1775401740.734	[STATS] LoRa tx=4 rx=0 err=0
+1775401740.735	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401740.735	[STATS] Beacon tx=1 rx=0
+1775401740.736	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401741.229	[ 30197][I][CoapServer.cpp:65] begin(): CoapServer: Listening on[Promoted GW] WiFi AP switched to: ForestCam-GW-80E4
+1775401741.229	 UDP port 5683
+1775401741.234	[Promoted GW] CoAP server started on port 5683
+1775401741.235	[Promoted GW] Harvest task created
+1775401741.235	[Promoted GW] Harvest capability enabled, listening...
+1775401744.844	[ 33810][I][NodeRegistry.cpp:85] update(): NodeRegistry: NEW node [0] ForestCam-7B28 (DC:54:75:E4:7B:28) — LEAF, 6 images, RSSI=-125
+1775401745.084	[LoRa] RELAYED beacon from ForestCam-7B28 (DC:54:75:E4:7B:28), TTL=1
+1775401745.815	[STATS] LoRa tx=6 rx=1 err=0
+1775401745.816	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401745.817	[STATS] Beacon tx=1 rx=1
+1775401745.818	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401750.867	[LoRa] Beacon TX (15 bytes) — ForestCam-GW-80E4, 0 images
+1775401750.868	[STATS] LoRa tx=7 rx=1 err=0
+1775401750.869	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401750.870	[STATS] Beacon tx=2 rx=1
+1775401750.871	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401755.946	[STATS] LoRa tx=7 rx=1 err=0
+1775401755.947	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401755.948	[STATS] Beacon tx=2 rx=1
+1775401755.949	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401759.855	[Election] ╔══════════════════════════════════╗
+1775401759.855	[Election] ║  RSSI RELAY ASSIGN → ForestCam-7B28 ║
+1775401759.857	[Election] ║  RSSI: -125 dBm                    ║
+1775401759.858	[Election] ╚══════════════════════════════════╝
+1775401759.994	[AODV] RREQ broadcast for FF:FF:FF:FF:FF:FF (rreqId=1, seqNum=2)
+1775401759.995	[Harvest] Starting cycle — 1 node(s)
+1775401759.996	[Harvest Task] Starting harvest cycle on Core 1
+1775401759.998	╔══════════════════════════════════════╗
+1775401760.003	║     HARVEST CYCLE STARTING           ║
+1775401760.004	║     Nodes registered: 1              ║
+1775401760.005	╚══════════════════════════════════════╝
+1775401760.005	[Harvest] Broadcasting RREQ for topology discovery...
+1775401760.087	[AODV] RREQ rx: orig=00:00:00:A9:CE:00 dest=FF:FF:FF:FF:FF:FF hops=1 prevHop=28:CB:3F:20:2A:CB
+1775401760.088	[AODV] I am the destination — sending RREP (seqNum=2561)
+1775401760.088	[AODV] RREQ broadcast for FF:FF:FF:FF:FF:FF (rreqId=2, seqNum=2561)
+1775401760.996	[STATS] LoRa tx=12 rx=2 err=0
+1775401760.997	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401761.002	[STATS] Beacon tx=2 rx=1
+1775401761.004	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401766.077	[AODV] Route discovery TIMEOUT for FF:FF:FF:FF:FF:FF
+1775401766.078	[STATS] LoRa tx=13 rx=2 err=0
+1775401766.079	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401766.079	[STATS] Beacon tx=2 rx=1
+1775401766.081	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401771.127	[STATS] LoRa tx=13 rx=2 err=0
+1775401771.129	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401771.130	[STATS] Beacon tx=2 rx=1
+1775401771.131	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401771.998	[Harvest] Route discovery period complete (1 routes found)
+1775401772.018	--- Connecting to ForestCam-7B28 (RSSI=-125, images=6, hops=1) ---
+1775401772.292	.
+1775401772.293	[OK] Connected to ForestCam-7B28 (IP: 192.168.4.2)
+1775401772.304	[ 61276][I][CoapClient.cpp:63] begin(): CoapClient: Ready (local port 0)
+1775401772.319	=== GET /info from ForestCam-7B28 ===
+1775401772.437	Response: {"count":6,"block_size":1024,"images":[{"id":0,"name":"/images/vga.jpeg","size":10128,"blocks":10},{"id":1,"name":"/images/1080p.jpeg","size":13248,"blocks":13},{"id":2,"name":"/images/4k.jpg","size":967851,"blocks":946},{"id":3,"name":"/received/node_8560_boot001_000103s_img_000.jpg","size":27822,"blocks":28},{"id":4,"name":"/received/node_8560_boot001_000118s_img_001.jpg","size":84919,"blocks":83},{"id":5,"name":"/received/node_8560_boot001_000137s_img_002.jpg","size":27822,"blocks":28}]}
+1775401772.438	Downloading 6 image(s)...
+1775401772.439	[ 61402][E][vfs_api.cpp:113] exists(): File system is not mounted
+1775401772.440	[ 61408][E][vfs_api.cpp:204] mkdir(): File system is not mounted
+1775401772.442	[ 61414][E][vfs_api.cpp:113] exists(): File system is not mounted
+1775401772.446	  === Download /image/0 ===
+1775401772.448	[ 61420][I][CoapClient.cpp:457] downloadImagePipelined(): CoapClient: Pipelined download — image/0, window=3
+1775401772.674	[ 61646][I][CoapClient.cpp:561] downloadImagePipelined(): CoapClient: Image 0 — 10128 bytes, ~10 blocks
+1775401772.683	  Block 0 — 1024 bytes (10.0%)
+1775401773.112	  Block 9 — 10128 bytes (98.9%)
+1775401773.118	[ 62087][I][CoapClient.cpp:620] downloadImagePipelined(): CoapClient: Pipelined download complete — 10128 bytes, 10 blocks, 666 ms, 14.9 KB/s
+1775401773.134	    Bytes: 10128 | Blocks: 10 | Time: 666 ms | Speed: 14.9 KB/s
+1775401773.136	[ 62105][I][CoapClient.cpp:659] verifyChecksum(): CoapClient: Checksum verify — local=3257, server=3257 → PASS
+1775401773.142	    Checksum: 0x0CB9 — PASS
+1775401773.143	  === Download /image/1 ===
+1775401773.144	[ 62116][I][CoapClient.cpp:457] downloadImagePipelined(): CoapClient: Pipelined download — image/1, window=3
+1775401773.523	[ 62494][I][CoapClient.cpp:561] downloadImagePipelined(): CoapClient: Image 1 — 13248 bytes, ~13 blocks
+1775401773.531	  Block 0 — 1024 bytes (7.7%)
+1775401774.544	  Block 12 — 13248 bytes (99.5%)
+1775401774.549	[ 63518][I][CoapClient.cpp:620] downloadImagePipelined(): CoapClient: Pipelined download complete — 13248 bytes, 13 blocks, 1403 ms, 9.2 KB/s
+1775401774.559	    Bytes: 13248 | Blocks: 13 | Time: 1403 ms | Speed: 9.2 KB/s
+1775401774.597	[ 63568][I][CoapClient.cpp:659] verifyChecksum(): CoapClient: Checksum verify — local=12072, server=12072 → PASS
+1775401774.605	    Checksum: 0x2F28 — PASS
+1775401774.606	  === Download /image/2 ===
+1775401774.608	[ 63579][I][CoapClient.cpp:457] downloadImagePipelined(): CoapClient: Pipelined download — image/2, window=3
+1775401774.963	[ 63935][I][CoapClient.cpp:561] downloadImagePipelined(): CoapClient: Image 2 — 967851 bytes, ~946 blocks
+1775401775.138	  Block 0 — 1024 bytes (0.1%)
+1775401775.139	[LoRa] RELAYED beacon from ForestCam-7B28 (DC:54:75:E4:7B:28), TTL=1
+1775401776.209	[STATS] LoRa tx=14 rx=3 err=0
+1775401776.210	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401776.210	[STATS] Beacon tx=2 rx=2
+1775401776.211	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401778.272	[LoRa] Beacon TX (15 bytes) — ForestCam-GW-80E4, 0 images
+1775401778.766	[Election] Lower-priority gateway beacon — staying (we outrank)
+1775401781.263	  Block 50 — 52224 bytes (5.4%)
+1775401781.263	[STATS] LoRa tx=15 rx=4 err=0
+1775401781.265	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401781.265	[STATS] Beacon tx=3 rx=3
+1775401781.266	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401782.320	  Block 100 — 103424 bytes (10.7%)
+1775401786.223	  Block 150 — 154624 bytes (16.0%)
+1775401786.344	[STATS] LoRa tx=15 rx=4 err=0
+1775401786.348	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401786.348	[STATS] Beacon tx=3 rx=3
+1775401786.352	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401789.706	  Block 200 — 205824 bytes (21.2%)
+1775401790.837	[ 79808][I][NodeRegistry.cpp:85] update(): NodeRegistry: NEW node [1] ForestCam-8560 (DC:54:75:E4:85:60) — LEAF, 31 images, RSSI=-8
+1775401790.848	[Election] ╔══════════════════════════════════╗
+1775401790.848	[Election] ║  RSSI RELAY ASSIGN → ForestCam-8560 ║
+1775401790.851	[Election] ║  RSSI: -8 dBm                    ║
+1775401790.855	[Election] ╚══════════════════════════════════╝
+1775401791.167	[LoRa] RELAYED beacon from ForestCam-8560 (DC:54:75:E4:85:60), TTL=1
+1775401791.398	[STATS] LoRa tx=17 rx=5 err=0
+1775401791.400	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401791.400	[STATS] Beacon tx=3 rx=4
+1775401791.401	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401791.598	[ 80568][I][NodeRegistry.cpp:85] update(): NodeRegistry: NEW node [2] ForestCam-86CC (DC:54:75:E4:86:CC) — LEAF, 32 images, RSSI=-4
+1775401791.609	[Election] ╔══════════════════════════════════╗
+1775401791.610	[Election] ║  RSSI RELAY ASSIGN → ForestCam-86CC ║
+1775401791.613	[Election] ║  RSSI: -4 dBm                    ║
+1775401791.619	[Election] ╚══════════════════════════════════╝
+1775401791.866	[LoRa] RELAYED beacon from ForestCam-86CC (DC:54:75:E4:86:CC), TTL=1
+1775401793.594	  Block 250 — 257024 bytes (26.5%)
+1775401796.477	[STATS] LoRa tx=22 rx=7 err=0
+1775401796.478	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401796.479	[STATS] Beacon tx=3 rx=6
+1775401796.479	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401797.910	  Block 300 — 308224 bytes (31.8%)
+1775401801.181	  Block 350 — 359424 bytes (37.1%)
+1775401801.534	[STATS] LoRa tx=22 rx=7 err=0
+1775401801.535	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401801.535	[STATS] Beacon tx=3 rx=6
+1775401801.536	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401805.051	[LoRa] RELAYED beacon from ForestCam-7B28 (DC:54:75:E4:7B:28), TTL=1
+1775401805.052	  Block 400 — 410624 bytes (42.4%)
+1775401806.614	[STATS] LoRa tx=23 rx=8 err=0
+1775401806.615	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401806.615	[STATS] Beacon tx=3 rx=7
+1775401806.616	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401806.981	[LoRa] Beacon TX (15 bytes) — ForestCam-GW-80E4, 0 images
+1775401807.273	[Election] Lower-priority gateway beacon — staying (we outrank)
+1775401808.547	  Block 450 — 461824 bytes (47.7%)
+1775401811.669	[STATS] LoRa tx=24 rx=9 err=0
+1775401811.670	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401811.670	[STATS] Beacon tx=4 rx=8
+1775401811.671	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401812.448	  Block 500 — 513024 bytes (53.0%)
+1775401816.746	  Block 550 — 564224 bytes (58.2%)
+1775401816.747	[STATS] LoRa tx=24 rx=9 err=0
+1775401816.748	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401816.749	[STATS] Beacon tx=4 rx=8
+1775401816.750	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401820.181	[LoRa] RELAYED beacon from ForestCam-86CC (DC:54:75:E4:86:CC), TTL=1
+1775401820.618	  Block 600 — 615424 bytes (63.5%)
+1775401821.805	[STATS] LoRa tx=25 rx=10 err=0
+1775401821.806	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401821.806	[STATS] Beacon tx=4 rx=9
+1775401821.807	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401822.341	[LoRa] RELAYED beacon from ForestCam-8560 (DC:54:75:E4:85:60), TTL=1
+1775401826.761	  Block 650 — 666624 bytes (68.8%)
+1775401826.762	  Block 700 — 717824 bytes (74.1%)
+1775401826.885	[STATS] LoRa tx=26 rx=11 err=0
+1775401826.886	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401826.886	[STATS] Beacon tx=4 rx=10
+1775401826.887	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401829.636	  Block 750 — 769024 bytes (79.4%)
+1775401831.939	[STATS] LoRa tx=26 rx=11 err=0
+1775401831.940	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401831.940	[STATS] Beacon tx=4 rx=10
+1775401831.940	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401833.725	  Block 800 — 820224 bytes (84.7%)
+1775401834.035	[LoRa] RELAYED beacon from ForestCam-7B28 (DC:54:75:E4:7B:28), TTL=1
+1775401835.506	[LoRa] Beacon TX (15 bytes) — ForestCam-GW-80E4, 0 images
+1775401836.012	[Election] Lower-priority gateway beacon — staying (we outrank)
+1775401837.023	[STATS] LoRa tx=28 rx=13 err=0
+1775401837.024	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401837.024	[STATS] Beacon tx=5 rx=12
+1775401837.025	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401837.840	  Block 850 — 871424 bytes (90.0%)
+1775401841.718	  Block 900 — 922624 bytes (95.2%)
+1775401842.077	[STATS] LoRa tx=28 rx=13 err=0
+1775401842.078	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401842.078	[STATS] Beacon tx=5 rx=12
+1775401842.078	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401844.717	[133694][I][CoapClient.cpp:620] downloadImagePipelined(): CoapCl  Block 945 — 967851 bytes (99.9%)
+1775401844.719	ient: Pipelined download complete — 967851 bytes, 946 blocks, 70114 ms, 13.5 KB/s
+1775401844.730	    Bytes: 967851 | Blocks: 946 | Time: 70114 ms | Speed: 13.5 KB/s
+1775401844.741	[133717][I][CoapClient.cpp:659] verifyChecksum(): CoapClient: Checksum verify — local=16335, server=16335 → PASS
+1775401844.750	    Checksum: 0x3FCF — PASS
+1775401844.750	  === Download /image/3 ===
+1775401844.752	[133728][I][CoapClient.cpp:457] downloadImagePipelined(): CoapClient: Pipelined download — image/3, window=3
+1775401845.000	[133976][I][CoapClient.cpp:561] downloadImagePipelined(): CoapClient: Image 3 — 27822 bytes, ~28 blocks
+1775401846.673	  Block 0 — 1024 bytes (3.6%)
+1775401846.674	  Block 27 — 27822 bytes (97.0%)
+1775401846.678	[135653][I][CoapClient.cpp:620] downloadImagePipelined(): CoapClient: Pipelined download complete — 27822 bytes, 28 blocks, 1924 ms, 14.1 KB/s
+1775401846.688	    Bytes: 27822 | Blocks: 28 | Time: 1924 ms | Speed: 14.1 KB/s
+1775401846.738	[135714][I][CoapClient.cpp:659] verifyChecksum(): CoapClient: Checksum verify — local=14843, server=14843 → PASS
+1775401846.747	    Checksum: 0x39FB — PASS
+1775401846.747	  === Download /image/4 ===
+1775401846.749	[135725][I][CoapClient.cpp:457] downloadImagePipelined(): CoapClient: Pipelined download — image/4, window=3
+1775401847.049	[136025][I][CoapClient.cpp:561] downloadImagePipelined(): CoapClient: Image 4 — 84919 bytes, ~83 blocks
+1775401847.057	  Block 0 — 1024 bytes (1.2%)
+1775401847.158	[STATS] LoRa tx=28 rx=13 err=0
+1775401847.159	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401847.159	[STATS] Beacon tx=5 rx=12
+1775401847.160	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401850.718	[LoRa] RELAYED beacon from ForestCam-86CC (DC:54:75:E4:86:CC), TTL=1
+1775401852.211	  Block 50 — 52224 bytes (61.4%)
+1775401852.211	[STATS] LoRa tx=29 rx=14 err=0
+1775401852.212	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401852.213	[STATS] Beacon tx=5 rx=13
+1775401852.214	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401852.797	  Block 82 — 84919 bytes (99.9%)
+1775401852.802	[141777][I][CoapClient.cpp:620] downloadImagePipelined(): CoapClient: Pipelined download complete — 84919 bytes, 83 blocks, 6051 ms, 13.7 KB/s
+1775401852.812	    Bytes: 84919 | Blocks: 83 | Time: 6051 ms | Speed: 13.7 KB/s
+1775401852.824	[141800][I][CoapClient.cpp:659] verifyChecksum(): CoapClient: Checksum verify — local=6426, server=6426 → PASS
+1775401852.832	    Checksum: 0x191A — PASS
+1775401852.833	  === Download /image/5 ===
+1775401852.835	[141810][I][CoapClient.cpp:457] downloadImagePipelined(): CoapClient: Pipelined download — image/5, window=3
+1775401853.184	[142160][I][CoapClient.cpp:561] downloadImagePipelined(): CoapClient: Image 5 — 27822 bytes, ~28 blocks
+1775401853.192	  Block 0 — 1024 bytes (3.6%)
+1775401853.874	[LoRa] RELAYED beacon from ForestCam-8560 (DC:54:75:E4:85:60), TTL=1
+1775401855.462	  Block 27 — 27822 bytes (97.0%)
+1775401855.466	[144442][I][CoapClient.cpp:620] downloadImagePipelined(): CoapClient: Pipelined download complete — 27822 bytes, 28 blocks, 2631 ms, 10.3 KB/s
+1775401855.478	    Bytes: 27822 | Blocks: 28 | Time: 2631 ms | Speed: 10.3 KB/s
+1775401855.485	[144461][I][CoapClient.cpp:659] verifyChecksum(): CoapClient: Checksum verify — local=60305, server=60305 → PASS
+1775401855.493	    Checksum: 0xEB91 — PASS
+1775401855.493	  Node ForestCam-7B28: 6/6 images OK
+1775401855.514	[144492][I][CoapClient.cpp:75] stop(): CoapClient: Stopped
+1775401855.530	--- Connecting to ForestCam-86CC (RSSI=-4, images=32, hops=1) ---
+1775401855.534	[144511][W][WiFiGeneric.cpp:1062] _eventCallback(): Reason: 8 - ASSOC_LEAVE
+1775401855.804	.
+1775401855.806	[OK] Connected to ForestCam-86CC (IP: 192.168.4.2)
+1775401855.817	[144794][I][CoapClient.cpp:63] begin(): CoapClient: Ready (local port 0)
+1775401855.832	=== GET /info from ForestCam-86CC ===
+1775401855.877	Response: {"count":32,"block_size":1024,"images":[{"id":0,"name":"/images/1920x1080-aesthetic-glrfk0ntspz3tvxg.jpg","size":27822,"blocks":28},{"id":1,"name":"/images/062625_18b.jpg","size":84919,"blocks":83},{"id":2,"name":"/received/node_8560_boot001_000064s_img_000.jpg","size":27822,"blocks":28},{"id":3,"name":"/received/node_8560_boot001_000079s_img_001.jpg","size":0,"blocks":0},{"id":4,"name":"/received/node_8560_boot001_000067s_img_000.jpg","size":27822,"blocks":28}]}
+1775401855.878	Downloading 32 image(s)...
+1775401855.879	[144849][E][vfs_api.cpp:113] exists(): File system is not mounted
+1775401855.881	[144855][E][vfs_api.cpp:204] mkdir(): File system is not mounted
+1775401855.883	[144860][E][vfs_api.cpp:113] exists(): File system is not mounted
+1775401855.888	  === Download /image/0 ===
+1775401855.891	[144866][I][CoapClient.cpp:457] downloadImagePipelined(): CoapClient: Pipelined download — image/0, window=3
+1775401856.366	[145343][I][CoapClient.cpp:561] downloadImagePipelined(): CoapClient: Image 0 — 27822 bytes, ~28 blocks
+1775401856.374	  Block 0 — 1024 bytes (3.6%)
+1775401857.225	[STATS] LoRa tx=30 rx=16 err=0
+1775401857.227	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401857.227	[STATS] Beacon tx=5 rx=15
+1775401857.228	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401858.627	  Block 27 — 27822 bytes (97.0%)
+1775401858.632	[147606][I][CoapClient.cpp:620] downloadImagePipelined(): CoapClient: Pipelined download complete — 27822 bytes, 28 blocks, 2740 ms, 9.9 KB/s
+1775401858.642	    Bytes: 27822 | Blocks: 28 | Time: 2740 ms | Speed: 9.9 KB/s
+1775401858.656	[147632][I][CoapClient.cpp:659] verifyChecksum(): CoapClient: Checksum verify — local=14843, server=14843 → PASS
+1775401858.664	    Checksum: 0x39FB — PASS
+1775401858.664	  === Download /image/1 ===
+1775401858.667	[147643][I][CoapClient.cpp:457] downloadImagePipelined(): CoapClient: Pipelined download — image/1, window=3
+1775401859.050	[148027][I][CoapClient.cpp:561] downloadImagePipelined(): CoapClient: Image 1 — 84919 bytes, ~83 blocks
+1775401859.058	  Block 0 — 1024 bytes (1.2%)
+1775401862.286	[STATS] LoRa tx=30 rx=16 err=0
+1775401862.287	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401862.288	[STATS] Beacon tx=5 rx=15
+1775401862.289	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401863.908	[LoRa] Beacon TX (15 bytes) — ForestCam-GW-80E4, 0 images
+1775401864.411	  Block 50 — 52224 bytes (61.4%)
+1775401864.412	[Election] Lower-priority gateway beacon — staying (we outrank)
+1775401866.780	[LoRa] RELAYED beacon from ForestCam-7B28 (DC:54:75:E4:7B:28), TTL=1
+1775401866.780	  Block 82 — 84919 bytes (99.9%)
+1775401866.784	[155760][I][CoapClient.cpp:620] downloadImagePipelined(): CoapClient: Pipelined download complete — 84919 bytes, 83 blocks, 8116 ms, 10.2 KB/s
+1775401866.794	    Bytes: 84919 | Blocks: 83 | Time: 8116 ms | Speed: 10.2 KB/s
+1775401866.808	[155786][I][CoapClient.cpp:659] verifyChecksum(): CoapClient: Checksum verify — local=6426, server=6426 → PASS
+1775401866.819	    Checksum: 0x191A — PASS
+1775401866.820	  === Download /image/2 ===
+1775401866.822	[155796][I][CoapClient.cpp:457] downloadImagePipelined(): CoapClient: Pipelined download — image/2, window=3
+1775401867.316	[156293][I][CoapClient.cpp:561] downloadImagePipelined(): CoapClient: Image 2 — 27822 bytes, ~28 blocks
+1775401867.324	  Block 0 — 1024 bytes (3.6%)
+1775401867.366	[STATS] LoRa tx=32 rx=18 err=0
+1775401867.367	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401867.368	[STATS] Beacon tx=6 rx=17
+1775401867.368	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401869.683	  Block 27 — 27822 bytes (97.0%)
+1775401869.688	[158663][I][CoapClient.cpp:620] downloadImagePipelined(): CoapClient: Pipelined download complete — 27822 bytes, 28 blocks, 2867 ms, 9.5 KB/s
+1775401869.751	    Bytes: 27822 | Blocks: 28 | Time: 2867 ms | Speed: 9.5 KB/s
+1775401869.753	[158729][I][CoapClient.cpp:659] verifyChecksum(): CoapClient: Checksum verify — local=14843, server=14843 → PASS
+1775401869.760	    Checksum: 0x39FB — PASS
+1775401869.761	  === Download /image/3 ===
+1775401869.763	[158740][I][CoapClient.cpp:457] downloadImagePipelined(): CoapClient: Pipelined download — image/3, window=3
+1775401869.787	[158764][E][CoapClient.cpp:546] downloadImagePipelined(): CoapClient: Server error on block 0 (code=4.00)
+1775401869.794	    [ERROR] Download failed: SERVER_ERROR
+1775401869.795	  === Download /image/4 ===
+1775401869.799	[158774][I][CoapClient.cpp:457] downloadImagePipelined(): CoapClient: Pipelined download — image/4, window=3
+1775401870.067	[159045][I][CoapClient.cpp:561] downloadImagePipelined(): CoapClient: Image 4 — 27822 bytes, ~28 blocks
+1775401870.076	  Block 0 — 1024 bytes (3.6%)
+1775401872.431	[STATS] LoRa tx=32 rx=18 err=0
+1775401872.432	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401872.433	[STATS] Beacon tx=6 rx=17
+1775401872.434	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401872.560	  Block 27 — 27822 bytes (97.0%)
+1775401872.565	[161541][I][CoapClient.cpp:620] downloadImagePipelined(): CoapClient: Pipelined download complete — 27822 bytes, 28 blocks, 2766 ms, 9.8 KB/s
+1775401872.639	    Bytes: 27822 | Blocks: 28 | Time: 2766 ms | Speed: 9.8 KB/s
+1775401872.642	[161618][I][CoapClient.cpp:659] verifyChecksum(): CoapClient: Checksum verify — local=14843, server=14843 → PASS
+1775401872.649	    Checksum: 0x39FB — PASS
+1775401872.650	  === Download /image/5 ===
+1775401872.652	[161629][I][CoapClient.cpp:457] downloadImagePipelined(): CoapClient: Pipelined download — image/5, window=3
+1775401872.939	[161917][I][CoapClient.cpp:561] downloadImagePipelined(): CoapClient: Image 5 — 84919 bytes, ~83 blocks
+1775401872.947	  Block 0 — 1024 bytes (1.2%)
+1775401877.513	[STATS] LoRa tx=32 rx=18 err=0
+1775401877.514	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401877.514	[STATS] Beacon tx=6 rx=17
+1775401877.516	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401877.620	  Block 50 — 52224 bytes (61.4%)
+1775401878.922	[LoRa] RELAYED beacon from ForestCam-86CC (DC:54:75:E4:86:CC), TTL=1
+1775401880.086	[AODV] Route to 00:00:00:A9:CE:00 expired
+1775401880.528	  Block 82 — 84919 bytes (99.9%)
+1775401880.534	[169510][I][CoapClient.cpp:620] downloadImagePipelined(): CoapClient: Pipelined download complete — 84919 bytes, 83 blocks, 7880 ms, 10.5 KB/s
+1775401880.544	    Bytes: 84919 | Blocks: 83 | Time: 7880 ms | Speed: 10.5 KB/s
+1775401880.554	[169532][I][CoapClient.cpp:659] verifyChecksum(): CoapClient: Checksum verify — local=6426, server=6426 → PASS
+1775401880.562	    Checksum: 0x191A — PASS
+1775401880.563	  === Download /image/6 ===
+1775401880.565	[169542][I][CoapClient.cpp:457] downloadImagePipelined(): CoapClient: Pipelined download — image/6, window=3
+1775401880.886	[169865][I][CoapClient.cpp:561] downloadImagePipelined(): CoapClient: Image 6 — 84919 bytes, ~83 blocks
+1775401882.062	  Block 0 — 1024 bytes (1.2%)
+1775401882.063	[LoRa] RELAYED beacon from ForestCam-8560 (DC:54:75:E4:85:60), TTL=1
+1775401882.571	[STATS] LoRa tx=34 rx=22 err=0
+1775401882.572	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401882.572	[STATS] Beacon tx=6 rx=21
+1775401882.573	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401885.859	  Block 50 — 52224 bytes (61.4%)
+1775401887.650	[STATS] LoRa tx=34 rx=22 err=0
+1775401887.651	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401887.651	[STATS] Beacon tx=6 rx=21
+1775401887.652	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401889.173	  Block 82 — 84919 bytes (99.9%)
+1775401889.177	[178155][I][CoapClient.cpp:620] downloadImagePipelined(): CoapClient: Pipelined download complete — 84919 bytes, 83 blocks, 8612 ms, 9.6 KB/s
+1775401889.275	    Bytes: 84919 | Blocks: 83 | Time: 8612 ms | Speed: 9.6 KB/s
+1775401889.278	[178255][I][CoapClient.cpp:659] verifyChecksum(): CoapClient: Checksum verify — local=6426, server=6426 → PASS
+1775401889.285	    Checksum: 0x191A — PASS
+1775401889.285	  === Download /image/7 ===
+1775401889.287	[178265][I][CoapClient.cpp:457] downloadImagePipelined(): CoapClient: Pipelined download — image/7, window=3
+1775401889.750	[178730][I][CoapClient.cpp:561] downloadImagePipelined(): CoapClient: Image 7 — 27822 bytes, ~28 blocks
+1775401889.759	  Block 0 — 1024 bytes (3.6%)
+1775401892.006	  Block 27 — 27822 bytes (97.0%)
+1775401892.010	[180988][I][CoapClient.cpp:620] downloadImagePipelined(): CoapClient: Pipelined download complete — 27822 bytes, 28 blocks, 2722 ms, 10.0 KB/s
+1775401892.021	    Bytes: 27822 | Blocks: 28 | Time: 2722 ms | Speed: 10.0 KB/s
+1775401892.028	[181007][I][CoapClient.cpp:659] verifyChecksum(): CoapClient: Checksum verify — local=14843, server=14843 → PASS
+1775401892.037	    Checksum: 0x39FB — PASS
+1775401892.037	  === Download /image/8 ===
+1775401892.039	[181018][I][CoapClient.cpp:457] downloadImagePipelined(): CoapClient: Pipelined download — image/8, window=3
+1775401892.419	[181397][I][CoapClient.cpp:561] downloadImagePipelined(): CoapClient: Image 8 — 10128 bytes, ~10 blocks
+1775401892.426	  Block 0 — 1024 bytes (10.0%)
+1775401892.727	[STATS] LoRa tx=34 rx=22 err=0
+1775401892.729	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401892.729	[STATS] Beacon tx=6 rx=21
+1775401892.730	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401893.447	  Block 9 — 10128 bytes (98.9%)
+1775401893.452	[182429][I][CoapClient.cpp:620] downloadImagePipelined(): CoapClient: Pipelined download complete — 10128 bytes, 10 blocks, 1411 ms, 7.0 KB/s
+1775401893.463	    Bytes: 10128 | Blocks: 10 | Time: 1411 ms | Speed: 7.0 KB/s
+1775401893.533	[182512][I][CoapClient.cpp:659] verifyChecksum(): CoapClient: Checksum verify — local=3257, server=3257 → PASS
+1775401893.542	    Checksum: 0x0CB9 — PASS
+1775401893.542	  === Download /image/9 ===
+1775401893.544	[182522][I][CoapClient.cpp:457] downloadImagePipelined(): CoapClient: Pipelined download — image/9, window=3
+1775401894.026	[183005][I][CoapClient.cpp:561] downloadImagePipelined(): CoapClient: Image 9 — 10128 bytes, ~10 blocks
+1775401894.034	  Block 0 — 1024 bytes (10.0%)
+1775401894.681	  Block 9 — 10128 bytes (98.9%)
+1775401894.685	[183663][I][CoapClient.cpp:620] downloadImagePipelined(): CoapClient: Pipelined download complete — 10128 bytes, 10 blocks, 1141 ms, 8.7 KB/s
+1775401894.757	    Bytes: 10128 | Blocks: 10 | Time: 1141 ms | Speed: 8.7 KB/s
+1775401894.759	[183737][I][CoapClient.cpp:659] verifyChecksum(): CoapClient: Checksum verify — local=3257, server=3257 → PASS
+1775401894.766	    Checksum: 0x0CB9 — PASS
+1775401894.767	  === Download /image/10 ===
+1775401894.769	[183747][I][CoapClient.cpp:457] downloadImagePipelined(): CoapClient: Pipelined download — image/10, window=3
+1775401894.988	[LoRa] RELAYED beacon from ForestCam-7B28 (DC:54:75:E4:7B:28), TTL=1
+1775401895.286	[184265][I][CoapClient.cpp:561] downloadImagePipelined(): CoapClient: Image 10 — 13248 bytes, ~13 blocks
+1775401895.294	  Block 0 — 1024 bytes (7.7%)
+1775401895.559	[LoRa] Beacon TX (15 bytes) — ForestCam-GW-80E4, 0 images
+1775401896.022	[Election] Lower-priority gateway beacon — staying (we outrank)
+1775401896.218	  Block 12 — 13248 bytes (99.5%)
+1775401896.222	[185200][I][CoapClient.cpp:620] downloadImagePipelined(): CoapClient: Pipelined download complete — 13248 bytes, 13 blocks, 1452 ms, 8.9 KB/s
+1775401896.240	    Bytes: 13248 | Blocks: 13 | Time: 1452 ms | Speed: 8.9 KB/s
+1775401896.242	[185220][I][CoapClient.cpp:659] verifyChecksum(): CoapClient: Checksum verify — local=12072, server=12072 → PASS
+1775401896.250	    Checksum: 0x2F28 — PASS
+1775401896.250	  === Download /image/11 ===
+1775401896.253	[185231][I][CoapClient.cpp:457] downloadImagePipelined(): CoapClient: Pipelined download — image/11, window=3
+1775401896.721	[185700][I][CoapClient.cpp:561] downloadImagePipelined(): CoapClient: Image 11 — 967851 bytes, ~946 blocks
+1775401896.729	  Block 0 — 1024 bytes (0.1%)
+1775401897.730	[STATS] LoRa tx=36 rx=24 err=0
+1775401897.731	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401897.731	[STATS] Beacon tx=7 rx=23
+1775401897.733	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401901.420	  Block 50 — 52224 bytes (5.4%)
+1775401902.783	[STATS] LoRa tx=36 rx=24 err=0
+1775401902.784	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401902.785	[STATS] Beacon tx=7 rx=23
+1775401902.786	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401906.547	  Block 100 — 103424 bytes (10.7%)
+1775401907.863	[STATS] LoRa tx=36 rx=24 err=0
+1775401907.864	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401907.864	[STATS] Beacon tx=7 rx=23
+1775401907.864	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401910.804	[LoRa] RELAYED beacon from ForestCam-8560 (DC:54:75:E4:85:60), TTL=1
+1775401910.806	[LoRa] RELAYED beacon from ForestCam-86CC (DC:54:75:E4:86:CC), TTL=1
+1775401912.916	  Block 150 — 154624 bytes (16.0%)
+1775401912.917	[STATS] LoRa tx=38 rx=27 err=0
+1775401912.918	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401912.919	[STATS] Beacon tx=7 rx=26
+1775401912.920	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401916.523	  Block 200 — 205824 bytes (21.2%)
+1775401917.996	[STATS] LoRa tx=38 rx=27 err=0
+1775401917.997	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401917.998	[STATS] Beacon tx=7 rx=26
+1775401917.999	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401921.498	  Block 250 — 257024 bytes (26.5%)
+1775401923.048	[STATS] LoRa tx=38 rx=27 err=0
+1775401923.048	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401923.048	[STATS] Beacon tx=7 rx=26
+1775401923.049	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401924.653	[LoRa] RELAYED beacon from ForestCam-7B28 (DC:54:75:E4:7B:28), TTL=1
+1775401926.103	[LoRa] Beacon TX (15 bytes) — ForestCam-GW-80E4, 0 images
+1775401926.456	[Election] Lower-priority gateway beacon — staying (we outrank)
+1775401926.555	  Block 300 — 308224 bytes (31.8%)
+1775401928.128	[STATS] LoRa tx=40 rx=29 err=0
+1775401928.129	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401928.130	[STATS] Beacon tx=8 rx=28
+1775401928.130	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401931.326	  Block 350 — 359424 bytes (37.1%)
+1775401933.182	[STATS] LoRa tx=40 rx=29 err=0
+1775401933.183	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401933.183	[STATS] Beacon tx=8 rx=28
+1775401933.184	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401936.441	  Block 400 — 410624 bytes (42.4%)
+1775401938.262	[STATS] LoRa tx=40 rx=29 err=0
+1775401938.263	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401938.264	[STATS] Beacon tx=8 rx=28
+1775401938.265	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401939.780	[LoRa] RELAYED beacon from ForestCam-8560 (DC:54:75:E4:85:60), TTL=1
+1775401941.122	  Block 450 — 461824 bytes (47.7%)
+1775401943.319	[LoRa] RELAYED beacon from ForestCam-86CC (DC:54:75:E4:86:CC), TTL=1
+1775401943.320	[STATS] LoRa tx=42 rx=32 err=0
+1775401943.321	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401943.322	[STATS] Beacon tx=8 rx=31
+1775401943.322	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401948.398	  Block 500 — 513024 bytes (53.0%)
+1775401948.398	[STATS] LoRa tx=42 rx=32 err=0
+1775401948.399	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401948.400	[STATS] Beacon tx=8 rx=31
+1775401948.400	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401953.238	  Block 550 — 564224 bytes (58.2%)
+1775401953.453	[STATS] LoRa tx=42 rx=32 err=0
+1775401953.454	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401953.454	[STATS] Beacon tx=8 rx=31
+1775401953.455	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401954.653	[LoRa] RELAYED beacon from ForestCam-7B28 (DC:54:75:E4:7B:28), TTL=1
+1775401954.724	[LoRa] Beacon TX (15 bytes) — ForestCam-GW-80E4, 0 images
+1775401955.237	[Election] Lower-priority gateway beacon — staying (we outrank)
+1775401958.533	  Block 600 — 615424 bytes (63.5%)
+1775401958.534	[STATS] LoRa tx=44 rx=34 err=0
+1775401958.535	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401958.535	[STATS] Beacon tx=9 rx=33
+1775401958.536	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401962.200	  Block 650 — 666624 bytes (68.8%)
+1775401963.590	[STATS] LoRa tx=44 rx=34 err=0
+1775401963.591	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401963.592	[STATS] Beacon tx=9 rx=33
+1775401963.592	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401967.133	  Block 700 — 717824 bytes (74.1%)
+1775401968.669	[STATS] LoRa tx=44 rx=34 err=0
+1775401968.670	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401968.671	[STATS] Beacon tx=9 rx=33
+1775401968.672	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401971.076	[LoRa] RELAYED beacon from ForestCam-8560 (DC:54:75:E4:85:60), TTL=1
+1775401971.228	  Block 750 — 769024 bytes (79.4%)
+1775401973.721	[STATS] LoRa tx=45 rx=36 err=0
+1775401973.723	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401973.723	[STATS] Beacon tx=9 rx=35
+1775401973.724	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401974.406	[LoRa] RELAYED beacon from ForestCam-86CC (DC:54:75:E4:86:CC), TTL=1
+1775401976.558	  Block 800 — 820224 bytes (84.7%)
+1775401978.799	[STATS] LoRa tx=46 rx=38 err=0
+1775401978.800	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401978.801	[STATS] Beacon tx=9 rx=37
+1775401978.802	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401980.832	  Block 850 — 871424 bytes (90.0%)
+1775401983.856	[STATS] LoRa tx=46 rx=39 err=0
+1775401983.857	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401983.865	[STATS] Beacon tx=9 rx=38
+1775401983.867	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401983.868	[LoRa] RELAYED beacon from ForestCam-7B28 (DC:54:75:E4:7B:28), TTL=1
+1775401984.528	[LoRa] Beacon TX (15 bytes) — ForestCam-GW-80E4, 0 images
+1775401984.699	[Election] Lower-priority gateway beacon — staying (we outrank)
+1775401986.205	  Block 900 — 922624 bytes (95.2%)
+1775401988.937	[STATS] LoRa tx=48 rx=40 err=0
+1775401988.938	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401988.938	[STATS] Beacon tx=10 rx=39
+1775401988.939	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401990.503	  Block 945 — 967851 bytes (99.9%)
+1775401990.508	[279490][I][CoapClient.cpp:620] downloadImagePipelined(): CoapClient: Pipelined download complete — 967851 bytes, 946 blocks, 94259 ms, 10.0 KB/s
+1775401990.518	    Bytes: 967851 | Blocks: 946 | Time: 94259 ms | Speed: 10.0 KB/s
+1775401990.526	[279511][I][CoapClient.cpp:659] verifyChecksum(): CoapClient: Checksum verify — local=16335, server=16335 → PASS
+1775401990.535	    Checksum: 0x3FCF — PASS
+1775401990.535	  === Download /image/12 ===
+1775401990.538	[279522][I][CoapClient.cpp:457] downloadImagePipelined(): CoapClient: Pipelined download — image/12, window=3
+1775401990.944	[279930][I][CoapClient.cpp:561] downloadImagePipelined(): CoapClient: Image 12 — 27822 bytes, ~28 blocks
+1775401990.953	  Block 0 — 1024 bytes (3.6%)
+1775401993.397	  Block 27 — 27822 bytes (97.0%)
+1775401993.401	[282385][I][CoapClient.cpp:620] downloadImagePipelined(): CoapClient: Pipelined download complete — 27822 bytes, 28 blocks, 2862 ms, 9.5 KB/s
+1775401993.424	    Bytes: 27822 | Blocks: 28 | Time: 2862 ms | Speed: 9.5 KB/s
+1775401993.426	[282410][I][CoapClient.cpp:659] verifyChecksum(): CoapClient: Checksum verify — local=14843, server=14843 → PASS
+1775401993.434	    Checksum: 0x39FB — PASS
+1775401993.434	  === Download /image/13 ===
+1775401993.435	[282421][I][CoapClient.cpp:457] downloadImagePipelined(): CoapClient: Pipelined download — image/13, window=3
+1775401993.935	[282919][I][CoapClient.cpp:561] downloadImagePipelined(): CoapClient: Image 13 — 84919 bytes, ~83 blocks
+1775401993.942	  Block 0 — 1024 bytes (1.2%)
+1775401993.993	[STATS] LoRa tx=48 rx=40 err=0
+1775401993.993	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401993.993	[STATS] Beacon tx=10 rx=39
+1775401993.994	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775401998.446	  Block 50 — 52224 bytes (61.4%)
+1775401999.070	[STATS] LoRa tx=48 rx=40 err=0
+1775401999.071	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775401999.072	[STATS] Beacon tx=10 rx=39
+1775401999.073	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775402001.216	[LoRa] RELAYED beacon from ForestCam-8560 (DC:54:75:E4:85:60), TTL=1
+1775402001.481	  Block 82 — 84919 bytes (99.9%)
+1775402001.484	[290470][I][CoapClient.cpp:620] downloadImagePipelined(): CoapClient: Pipelined download complete — 84919 bytes, 83 blocks, 8048 ms, 10.3 KB/s
+1775402001.496	    Bytes: 84919 | Blocks: 83 | Time: 8048 ms | Speed: 10.3 KB/s
+1775402001.570	[290557][I][CoapClient.cpp:659] verifyChecksum(): CoapClient: Checksum verify — local=6426, server=6426 → PASS
+1775402001.580	    Checksum: 0x191A — PASS
+1775402001.580	  === Download /image/14 ===
+1775402001.581	[290567][I][CoapClient.cpp:457] downloadImagePipelined(): CoapClient: Pipelined download — image/14, window=3
+1775402001.974	[290960][I][CoapClient.cpp:561] downloadImagePipelined(): CoapClient: Image 14 — 10128 bytes, ~10 blocks
+1775402001.983	  Block 0 — 1024 bytes (10.0%)
+1775402002.669	[LoRa] RELAYED beacon from ForestCam-86CC (DC:54:75:E4:86:CC), TTL=1
+1775402002.811	  Block 9 — 10128 bytes (98.9%)
+1775402002.816	[291800][I][CoapClient.cpp:620] downloadImagePipelined(): CoapClient: Pipelined download complete — 10128 bytes, 10 blocks, 1232 ms, 8.0 KB/s
+1775402002.831	    Bytes: 10128 | Blocks: 10 | Time: 1232 ms | Speed: 8.0 KB/s
+1775402002.833	[291818][I][CoapClient.cpp:659] verifyChecksum(): CoapClient: Checksum verify — local=3257, server=3257 → PASS
+1775402002.841	    Checksum: 0x0CB9 — PASS
+1775402002.842	  === Download /image/15 ===
+1775402002.844	[291829][I][CoapClient.cpp:457] downloadImagePipelined(): CoapClient: Pipelined download — image/15, window=3
+1775402003.420	[292406][I][CoapClient.cpp:561] downloadImagePipelined(): CoapClient: Image 15 — 13248 bytes, ~13 blocks
+1775402003.429	  Block 0 — 1024 bytes (7.7%)
+1775402004.130	[STATS] LoRa tx=50 rx=44 err=0
+1775402004.131	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775402004.132	[STATS] Beacon tx=10 rx=43
+1775402004.133	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775402004.380	[293365][I][CoapClient.cpp:620] downloadImagePipelined(): CoapCl  Block 12 — 13248 bytes (99.5%)
+1775402004.382	ient: Pipelined download complete — 13248 bytes, 13 blocks, 1535 ms, 8.4 KB/s
+1775402004.461	    Bytes: 13248 | Blocks: 13 | Time: 1535 ms | Speed: 8.4 KB/s
+1775402004.464	[293448][I][CoapClient.cpp:659] verifyChecksum(): CoapClient: Checksum verify — local=12072, server=12072 → PASS
+1775402004.471	    Checksum: 0x2F28 — PASS
+1775402004.471	  === Download /image/16 ===
+1775402004.473	[293459][I][CoapClient.cpp:457] downloadImagePipelined(): CoapClient: Pipelined download — image/16, window=3
+1775402004.996	[293981][I][CoapClient.cpp:561] downloadImagePipelined(): CoapClient: Image 16 — 967851 bytes, ~946 blocks
+1775402005.004	  Block 0 — 1024 bytes (0.1%)
+1775402009.208	[STATS] LoRa tx=50 rx=44 err=0
+1775402009.209	[STATS] AODV rreqT=2 rreqR=1 rrepT=1 rrepR=0 rerrT=0 rerrR=0
+1775402009.209	[STATS] Beacon tx=10 rx=43
+1775402009.209	[STATS] Harvest cycles=0 imgs=0 bytes=0 ok=0 fail=0
+1775402009.556	  Block 50 — 52224 bytes (5.4%)
+1775402012.298	[LoRa] RELAYED beacon from ForestCam-7B28 (DC:54:75:E4:7B:28), TTL=1
+1775402014.262	[STATS] LoRa tx=51 rx=45 err=0

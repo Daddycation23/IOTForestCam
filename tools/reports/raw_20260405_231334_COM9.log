@@ -1,0 +1,273 @@
+1775401714.830	[Role] Booting as: LEAF (auto-negotiate)
+1775401714.831	[RTOS] All primitives initialized
+1775401714.856	====================================
+1775401714.856	  IOT Forest Cam — Leaf (LoRa+CoAP)
+1775401714.856	  FreeRTOS + AODV Routing Enabled
+1775401714.857	====================================
+1775401715.431	[  5411][I][StorageReader.cpp:94] begin(): StorageReader: SD mounted — Type: SDHC, Size: 60906 MB
+1775401791.179	[ 81166][I][StorageReader.cpp:104] begin(): StorageReader: Found 32 image(s) in /images
+1775401791.186	[OK] SD card: 32 image(s) found
+1775401791.187	  [0] /images/1920x1080-aesthetic-glrfk0ntspz3tvxg.jpg — 27822 bytes (28 blocks)
+1775401791.187	  [1] /images/062625_18b.jpg — 84919 bytes (83 blocks)
+1775401791.190	  [2] /received/node_8560_boot001_000064s_img_000.jpg — 27822 bytes (28 blocks)
+1775401791.191	  [3] /received/node_8560_boot001_000079s_img_001.jpg — 0 bytes (0 blocks)
+1775401791.192	  [4] /received/node_8560_boot001_000067s_img_000.jpg — 27822 bytes (28 blocks)
+1775401791.192	  [5] /received/node_8560_boot001_000081s_img_001.jpg — 84919 bytes (83 blocks)
+1775401791.193	  [6] /received/node_80E4_boot001_000101s_img_000.jpg — 84919 bytes (83 blocks)
+1775401791.195	  [7] /received/node_80E4_boot001_000122s_img_001.jpg — 27822 bytes (28 blocks)
+1775401791.197	  [8] /received/node_7B28_boot001_000138s_img_000.jpg — 10128 bytes (10 blocks)
+1775401791.198	  [9] /received/node_7B28_boot001_000071s_img_000.jpg — 10128 bytes (10 blocks)
+1775401791.198	  [10] /received/node_7B28_boot001_000084s_img_001.jpg — 13248 bytes (13 blocks)
+1775401791.201	  [11] /received/node_7B28_boot001_000097s_img_002.jpg — 967851 bytes (946 blocks)
+1775401791.201	  [12] /received/node_8560_boot001_000211s_img_000.jpg — 27822 bytes (28 blocks)
+1775401791.202	  [13] /received/node_8560_boot001_000225s_img_001.jpg — 84919 bytes (83 blocks)
+1775401791.202	  [14] /received/node_7B28_boot001_000463s_img_000.jpg — 10128 bytes (10 blocks)
+1775401791.203	  [15] /received/node_7B28_boot001_000476s_img_001.jpg — 13248 bytes (13 blocks)
+1775401791.204	  [16] /received/node_7B28_boot001_000490s_img_002.jpg — 967851 bytes (946 blocks)
+1775401791.205	  [17] /received/node_80E4_boot001_000597s_img_000.jpg — 84919 bytes (83 blocks)
+1775401791.205	  [18] /received/node_80E4_boot001_000617s_img_001.jpg — 27822 bytes (28 blocks)
+1775401791.207	  [19] /received/node_80E4_boot001_000632s_img_002.jpg — 27822 bytes (28 blocks)
+1775401791.207	  [20] /received/node_80E4_boot001_000646s_img_003.jpg — 84919 bytes (83 blocks)
+1775401791.208	  [21] /received/node_80E4_boot001_000667s_img_004.jpg — 10128 bytes (10 blocks)
+1775401791.209	  [22] /received/node_80E4_boot001_000680s_img_005.jpg — 13248 bytes (13 blocks)
+1775401791.209	  [23] /received/node_80E4_boot001_000705s_img_007.jpg — 27822 bytes (28 blocks)
+1775401791.210	  [24] /received/node_80E4_boot001_000720s_img_008.jpg — 84919 bytes (83 blocks)
+1775401791.210	  [25] /received/node_80E4_boot001_000740s_img_009.jpg — 27822 bytes (28 blocks)
+1775401791.211	  [26] /received/node_80E4_boot001_000755s_img_010.jpg — 27822 bytes (28 blocks)
+1775401791.212	  [27] /received/node_80E4_boot001_000770s_img_011.jpg — 84919 bytes (83 blocks)
+1775401791.212	  [28] /received/node_80E4_boot001_000788s_img_012.jpg — 84919 bytes (83 blocks)
+1775401791.213	  [29] /received/node_80E4_boot001_000808s_img_013.jpg — 27822 bytes (28 blocks)
+1775401791.214	  [30] /received/node_80E4_boot001_000823s_img_014.jpg — 10128 bytes (10 blocks)
+1775401791.214	  [31] /received/node_80E4_boot001_000835s_img_015.jpg — 84919 bytes (83 blocks)
+1775401791.385	[OK] WiFi AP: ForestCam-86CC (pass: forestcam123)
+1775401791.386	[OK] IP: 192.168.4.1
+1775401791.387	[ 81374][I][CoapServer.cpp:65] begin(): CoapServer: Listening on UDP port 5683
+1775401791.393	[OK] CoAP server on port 5683
+1775401791.394	Resources:
+1775401791.395	  GET /info             — Image catalogue (JSON)
+1775401791.396	  GET /image/{n}        — Image via Block2 transfer
+1775401791.397	  GET /checksum/{n}     — Fletcher-16 checksum (JSON)
+1775401791.399	  GET /.well-known/core — Resource discovery
+1775401791.422	[ 81407][I][LoRaRadio.cpp:52] begin(): LoRaRadio: Pin check: DIO1(GPIO9)=0, BUSY(GPIO36)=1, CS(GPIO7)=1
+1775401791.429	[ 81416][I][LoRaRadio.cpp:56] begin(): LoRaRadio: Init attempt 1/3
+1775401791.490	[ 81475][I][LoRaRadio.cpp:72] begin(): LoRaRadio: SX1280 BUSY released after 2 ms
+1775401791.507	[ 81493][I][LoRaRadio.cpp:80] begin(): LoRaRadio: Initializing SX1280 at 2400.0 MHz, SF9, BW812.5 kHz...
+1775401791.520	[ 81507][I][LoRaRadio.cpp:92] begin(): LoRaRadio: SX1280 ready (attempt 1)
+1775401791.527	[OK] LoRa beacon TX + RX enabled (AODV routing)
+1775401791.527	[AODV] Initialized, nodeId=DC:54:75:E4:86:CC, seqNum=1
+1775401791.529	[Election] Grace period jitter: 4508 ms (ends at 101023 ms)
+1775401791.530	[Election] begin: role=LEAF priority=0xCC86E475 electionId=15979
+1775401791.555	[RTOS] Tasks created — Core 0: LoRa, Core 1: CoAP Server
+1775401791.555	[STATS] LoRa tx=0 rx=0 err=0
+1775401791.556	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401791.557	[STATS] Beacon tx=0 rx=0
+1775401791.557	[STATS] CoAP reqs=0 blocks=0
+1775401791.618	[LoRa] Beacon TX (15 bytes) — ForestCam-86CC, 32 images
+1775401792.213	[Election] ╔══════════════════════════════║
+1775401792.215	[Election] ╚══════════════════════════════════╝
+1775401792.216	[E��════════════════╗
+1775401792.218	[Election] ║  Gateway gone — RELAY → LEAF     ║
+1775401792.221	[Election] ╚══════════════════════════════════╝
+1775401792.779	[Election] ╔══════════════════════════════════╗
+1775401792.780	[Election] ║  RSSI-ASSIGNED TO RELAY          ║
+1775401792.783	[Election] ╚══════════════════════════════════╝
+1775401792.784	[Election] ╔═════on] ║  Gateway gone — RELAY → LEAF     ║
+1775401792.787	[Election] ╚══════════════════════════════════╝
+1775401796.636	[STATS] LoRa tx=1 rx=4 err=0
+1775401796.637	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401796.637	[STATS] Beacon tx=1 rx=2
+1775401796.637	[STATS] CoAP reqs=0 blocks=0
+1775401801.689	[STATS] LoRa tx=1 rx=4 err=0
+1775401801.691	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401801.691	[STATS] Beacon tx=1 rx=2
+1775401801.692	[STATS] CoAP reqs=0 blocks=0
+1775401806.770	[STATS] LoRa tx=1 rx=6 err=0
+1775401806.772	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401806.772	[STATS] Beacon tx=1 rx=4
+1775401806.773	[STATS] CoAP reqs=0 blocks=0
+1775401811.824	[STATS] LoRa tx=1 rx=8 err=0
+1775401811.825	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401811.825	[STATS] Beacon tx=1 rx=6
+1775401811.825	[STATS] CoAP reqs=0 blocks=0
+1775401816.904	[STATS] LoRa tx=1 rx=8 err=0
+1775401816.904	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401816.905	[STATS] Beacon tx=1 rx=6
+1775401816.905	[STATS] CoAP reqs=0 blocks=0
+1775401819.722	[LoRa] Beacon TX (15 bytes) — ForestCam-86CC, 32 images
+1775401821.958	[STATS] LoRa tx=2 rx=11 err=0
+1775401821.959	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401821.960	[STATS] Beacon tx=2 rx=9
+1775401821.961	[STATS] CoAP reqs=0 blocks=0
+1775401827.039	[STATS] LoRa tx=2 rx=12 err=0
+1775401827.040	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401827.040	[STATS] Beacon tx=2 rx=10
+1775401827.041	[STATS] CoAP reqs=0 blocks=0
+1775401832.092	[STATS] LoRa tx=2 rx=12 err=0
+1775401832.093	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401832.093	[STATS] Beacon tx=2 rx=10
+1775401832.093	[STATS] CoAP reqs=0 blocks=0
+1775401837.173	[STATS] LoRa tx=2 rx=16 err=0
+1775401837.175	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401837.175	[STATS] Beacon tx=2 rx=14
+1775401837.176	[STATS] CoAP reqs=0 blocks=0
+1775401842.227	[STATS] LoRa tx=2 rx=16 err=0
+1775401842.228	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401842.229	[STATS] Beacon tx=2 rx=14
+1775401842.229	[STATS] CoAP reqs=0 blocks=0
+1775401847.307	[STATS] LoRa tx=2 rx=16 err=0
+1775401847.309	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401847.309	[STATS] Beacon tx=2 rx=14
+1775401847.309	[STATS] CoAP reqs=0 blocks=0
+1775401850.198	[LoRa] Beacon TX (15 bytes) — ForestCam-86CC, 32 images
+1775401852.361	[STATS] LoRa tx=3 rx=18 err=0
+1775401852.362	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401852.364	[STATS] Beacon tx=3 rx=16
+1775401852.364	[STATS] CoAP reqs=0 blocks=0
+1775401856.022	[146011][I][StorageReader.cpp:185] openImage(): StorageReader: Opened /images/1920x1080-aesthetic-glrfk0ntspz3tvxg.jpg (27822 bytes, 28 blocks)
+1775401857.392	[STATS] LoRa tx=3 rx=21 err=0
+1775401857.393	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401857.394	[STATS] Beacon tx=3 rx=19
+1775401857.394	[STATS] CoAP reqs=16 blocks=15
+1775401858.835	[148825][I][StorageReader.cpp:185] openImage(): StorageReader: Opened /images/062625_18b.jpg (84919 bytes, 83 blocks)
+1775401862.418	[STATS] LoRa tx=3 rx=21 err=0
+1775401862.419	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401862.420	[STATS] Beacon tx=3 rx=19
+1775401862.420	[STATS] CoAP reqs=63 blocks=60
+1775401866.904	[156893][I][StorageReader.cpp:185] openImage(): StorageReader: Opened /received/node_8560_boot001_000064s_img_000.jpg (27822 bytes, 28 blocks)
+1775401867.505	[STATS] LoRa tx=3 rx=25 err=0
+1775401867.506	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401867.507	[STATS] Beacon tx=3 rx=23
+1775401867.507	[STATS] CoAP reqs=119 blocks=115
+1775401869.785	[159775][W][CoapServer.cpp:423] _sendError(): CoapServer: 4.00 Block number exceeds image size → 192.168.4.2:63301
+1775401869.799	[159788][W][CoapServer.cpp:423] _sendError(): CoapServer: 4.00 Block number exceeds image size → 192.168.4.2:63301
+1775401869.811	[159801][W][CoapServer.cpp:423] _sendError(): CoapServer: 4.00 Block number exceeds image size → 192.168.4.2:63301
+1775401869.895	[159884][I][StorageReader.cpp:185] openImage(): StorageReader: Opened /received/node_8560_boot001_000067s_img_000.jpg (27822 bytes, 28 blocks)
+1775401872.505	[STATS] LoRa tx=3 rx=25 err=0
+1775401872.506	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401872.506	[STATS] Beacon tx=3 rx=23
+1775401872.507	[STATS] CoAP reqs=173 blocks=166
+1775401872.769	[162758][I][StorageReader.cpp:185] openImage(): StorageReader: Opened /received/node_8560_boot001_000081s_img_001.jpg (84919 bytes, 83 blocks)
+1775401877.603	[STATS] LoRa tx=3 rx=25 err=0
+1775401877.604	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401877.604	[STATS] Beacon tx=3 rx=23
+1775401877.605	[STATS] CoAP reqs=226 blocks=218
+1775401878.639	[LoRa] Beacon TX (15 bytes) — ForestCam-86CC, 32 images
+1775401880.681	[170672][I][StorageReader.cpp:185] openImage(): StorageReader: Opened /received/node_80E4_boot001_000101s_img_000.jpg (84919 bytes, 83 blocks)
+1775401882.751	[STATS] LoRa tx=4 rx=30 err=0
+1775401882.752	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401882.752	[STATS] Beacon tx=4 rx=28
+1775401882.752	[STATS] CoAP reqs=280 blocks=270
+1775401887.808	[STATS] LoRa tx=4 rx=30 err=0
+1775401887.810	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401887.810	[STATS] Beacon tx=4 rx=28
+1775401887.811	[STATS] CoAP reqs=328 blocks=318
+1775401889.447	[179436][I][StorageReader.cpp:185] openImage(): StorageReader: Opened /received/node_80E4_boot001_000122s_img_001.jpg (27822 bytes, 28 blocks)
+1775401892.156	[182147][I][StorageReader.cpp:185] openImage(): StorageReader: Opened /received/node_7B28_boot001_000138s_img_000.jpg (10128 bytes, 10 blocks)
+1775401892.820	[STATS] LoRa tx=4 rx=30 err=0
+1775401892.821	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401892.822	[STATS] Beacon tx=4 rx=28
+1775401892.822	[STATS] CoAP reqs=379 blocks=368
+1775401893.694	[183685][I][StorageReader.cpp:185] openImage(): StorageReader: Opened /received/node_7B28_boot001_000071s_img_000.jpg (10128 bytes, 10 blocks)
+1775401894.927	[184918][I][StorageReader.cpp:185] openImage(): StorageReader: Opened /received/node_7B28_boot001_000084s_img_001.jpg (13248 bytes, 13 blocks)
+1775401896.432	[186424][I][StorageReader.cpp:185] openImage(): StorageReader: Opened /received/node_7B28_boot001_000097s_img_002.jpg (967851 bytes, 946 blocks)
+1775401897.916	[STATS] LoRa tx=4 rx=34 err=0
+1775401897.918	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401897.918	[STATS] Beacon tx=4 rx=32
+1775401897.919	[STATS] CoAP reqs=423 blocks=409
+1775401902.928	[STATS] LoRa tx=4 rx=34 err=0
+1775401902.929	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401902.929	[STATS] Beacon tx=4 rx=32
+1775401902.929	[STATS] CoAP reqs=475 blocks=461
+1775401907.953	[STATS] LoRa tx=4 rx=34 err=0
+1775401907.955	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401907.955	[STATS] Beacon tx=4 rx=32
+1775401907.956	[STATS] CoAP reqs=525 blocks=510
+1775401910.602	[LoRa] Beacon TX (15 bytes) — ForestCam-86CC, 32 images
+1775401913.063	[STATS] LoRa tx=5 rx=38 err=0
+1775401913.064	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401913.064	[STATS] Beacon tx=5 rx=36
+1775401913.065	[STATS] CoAP reqs=577 blocks=562
+1775401918.080	[STATS] LoRa tx=5 rx=38 err=0
+1775401918.081	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401918.081	[STATS] Beacon tx=5 rx=36
+1775401918.082	[STATS] CoAP reqs=627 blocks=613
+1775401923.134	[STATS] LoRa tx=5 rx=38 err=0
+1775401923.135	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401923.135	[STATS] Beacon tx=5 rx=36
+1775401923.136	[STATS] CoAP reqs=677 blocks=662
+1775401928.206	[STATS] LoRa tx=5 rx=42 err=0
+1775401928.207	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401928.207	[STATS] Beacon tx=5 rx=40
+1775401928.208	[STATS] CoAP reqs=727 blocks=713
+1775401933.252	[STATS] LoRa tx=5 rx=42 err=0
+1775401933.254	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401933.254	[STATS] Beacon tx=5 rx=40
+1775401933.255	[STATS] CoAP reqs=779 blocks=765
+1775401938.455	[STATS] LoRa tx=5 rx=42 err=0
+1775401938.456	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401938.456	[STATS] Beacon tx=5 rx=40
+1775401938.456	[STATS] CoAP reqs=833 blocks=818
+1775401942.521	[LoRa] Beacon TX (15 bytes) — ForestCam-86CC, 32 images
+1775401943.508	[STATS] LoRa tx=6 rx=47 err=0
+1775401943.509	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401943.509	[STATS] Beacon tx=6 rx=45
+1775401943.509	[STATS] CoAP reqs=883 blocks=869
+1775401948.577	[STATS] LoRa tx=6 rx=47 err=0
+1775401948.577	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401948.577	[STATS] Beacon tx=6 rx=45
+1775401948.578	[STATS] CoAP reqs=927 blocks=913
+1775401953.766	[STATS] LoRa tx=6 rx=47 err=0
+1775401953.767	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401953.768	[STATS] Beacon tx=6 rx=45
+1775401953.768	[STATS] CoAP reqs=968 blocks=953
+1775401958.870	[STATS] LoRa tx=6 rx=51 err=0
+1775401958.871	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401958.872	[STATS] Beacon tx=6 rx=49
+1775401958.872	[STATS] CoAP reqs=1024 blocks=1009
+1775401963.872	[STATS] LoRa tx=6 rx=51 err=0
+1775401963.873	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401963.873	[STATS] Beacon tx=6 rx=49
+1775401963.874	[STATS] CoAP reqs=1082 blocks=1068
+1775401968.882	[STATS] LoRa tx=6 rx=51 err=0
+1775401968.883	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401968.883	[STATS] Beacon tx=6 rx=49
+1775401968.884	[STATS] CoAP reqs=1134 blocks=1120
+1775401973.916	[STATS] LoRa tx=6 rx=54 err=0
+1775401973.917	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401973.917	[STATS] Beacon tx=6 rx=52
+1775401973.917	[STATS] CoAP reqs=1188 blocks=1173
+1775401974.117	[LoRa] Beacon TX (15 bytes) — ForestCam-86CC, 32 images
+1775401978.995	[STATS] LoRa tx=7 rx=56 err=0
+1775401978.996	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401978.997	[STATS] Beacon tx=7 rx=54
+1775401978.997	[STATS] CoAP reqs=1244 blocks=1229
+1775401984.092	[STATS] LoRa tx=7 rx=58 err=0
+1775401984.093	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401984.094	[STATS] Beacon tx=7 rx=56
+1775401984.095	[STATS] CoAP reqs=1294 blocks=1280
+1775401989.259	[STATS] LoRa tx=7 rx=60 err=0
+1775401989.260	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401989.260	[STATS] Beacon tx=7 rx=58
+1775401989.261	[STATS] CoAP reqs=1344 blocks=1329
+1775401990.846	[280843][I][StorageReader.cpp:185] openImage(): StorageReader: Opened /received/node_8560_boot001_000211s_img_000.jpg (27822 bytes, 28 blocks)
+1775401993.633	[283630][I][StorageReader.cpp:185] openImage(): StorageReader: Opened /received/node_8560_boot001_000225s_img_001.jpg (84919 bytes, 83 blocks)
+1775401994.348	[STATS] LoRa tx=7 rx=60 err=0
+1775401994.350	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401994.350	[STATS] Beacon tx=7 rx=58
+1775401994.351	[STATS] CoAP reqs=1394 blocks=1378
+1775401999.400	[STATS] LoRa tx=7 rx=60 err=0
+1775401999.401	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775401999.402	[STATS] Beacon tx=7 rx=58
+1775401999.402	[STATS] CoAP reqs=1446 blocks=1430
+1775402001.765	[291763][I][StorageReader.cpp:185] openImage(): StorageReader: Opened /received/node_7B28_boot001_000463s_img_000.jpg (10128 bytes, 10 blocks)
+1775402002.362	[LoRa] Beacon TX (15 bytes) — ForestCam-86CC, 32 images
+1775402003.067	[293065][I][StorageReader.cpp:185] openImage(): StorageReader: Opened /received/node_7B28_boot001_000476s_img_001.jpg (13248 bytes, 13 blocks)
+1775402004.462	[STATS] LoRa tx=8 rx=65 err=0
+1775402004.463	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775402004.463	[STATS] Beacon tx=8 rx=63
+1775402004.464	[STATS] CoAP reqs=1496 blocks=1477
+1775402004.716	[294715][I][StorageReader.cpp:185] openImage(): StorageReader: Opened /received/node_7B28_boot001_000490s_img_002.jpg (967851 bytes, 946 blocks)
+1775402009.518	[STATS] LoRa tx=8 rx=65 err=0
+1775402009.519	[STATS] AODV rreqT=0 rreqR=0 rrepT=0 rrepR=0 rerrT=0 rerrR=0
+1775402009.520	[STATS] Beacon tx=8 rx=63
+1775402009.521	[STATS] CoAP reqs=1547 blocks=1528
