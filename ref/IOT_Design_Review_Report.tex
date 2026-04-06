@@ -65,9 +65,13 @@
         Tan Bing Kun Terence & 2401883 \\
         \hline
     \end{tabular}
+
+    \vspace{1cm}
+    {\large Source Code Repository:} \\[0.3cm]
+    \url{https://github.com/Daddycation23/IOTForestCam}
 \end{center}
 
-\vspace{1.5cm}
+\vspace{1cm}
 
 % ═════════════════════════════════════════════════════════════
 % ABSTRACT
@@ -156,6 +160,29 @@ The primary limitation is the ``Bandwidth-Range-Power Trilemma'': high-bandwidth
 
 Together, these findings motivate this project's dual-radio, event-driven architecture: LoRa for sub-100-byte control traffic to avoid image-transfer congestion [10], Wi-Fi with CoAP Block-Wise Transfer for bulk payloads to bypass LoRa duty-cycle limits, deep sleep to approach LPWAN idle currents [6], and SD-to-network streaming in 1024-byte chunks via CoAP (RFC 7959) to sidestep the heap-exhaustion failure mode observed in RAM-buffered designs [11].
 
+\begin{table}[ht]
+\centering
+\footnotesize
+\caption{\changed{Comparison of candidate communications technologies considered for this project [2]--[5], [10].}}
+\label{tab:comms-tech}
+\setlength{\tabcolsep}{4pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}lllllll@{}}
+\toprule
+\textbf{Technology} & \textbf{Range} & \textbf{Throughput} & \textbf{Idle} & \textbf{Payload} & \textbf{Band} & \textbf{Infra.} \\
+\midrule
+LoRa 2.4\,GHz (SX1280)  & 2--10\,km  & 0.5--202\,kbps & $<$20\,$\mu$A  & 255\,B  & ISM 2.4\,GHz      & None (P2P/mesh) \\
+LoRaWAN sub-GHz          & 2--15\,km  & $<$5\,kbps     & $<$20\,$\mu$A  & 222\,B  & ISM sub-GHz       & LoRaWAN gw+NS   \\
+Wi-Fi 802.11 (ESP32)     & 50--100\,m & 10--150\,Mbps  & 80--200\,mA    & 1500\,B & ISM 2.4/5\,GHz    & Access point    \\
+BLE 5.x                  & 30--100\,m & 1--2\,Mbps     & 10--40\,$\mu$A & 247\,B  & ISM 2.4\,GHz      & None (P2P/mesh) \\
+Zigbee / 802.15.4        & 10--100\,m & 250\,kbps      & 20--50\,$\mu$A & 127\,B  & ISM 2.4\,GHz      & Coordinator     \\
+LTE-M / NB-IoT           & Cellular   & 0.2--1\,Mbps   & 100--200\,mA   & 1500\,B & Licensed cellular & Carrier/SIM     \\
+Sigfox                   & 10--40\,km & 0.1\,kbps      & $<$20\,$\mu$A  & 12\,B   & ISM sub-GHz       & Sigfox network  \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
 \newpage
 
 % ═════════════════════════════════════════════════════════════
@@ -176,6 +203,13 @@ The system uses a \changed{star-mesh hybrid} architecture with two operational p
 \end{itemize}
 The LoRa mesh handles low-power coordination while the Wi-Fi star handles high-throughput data transfer, combining mesh resilience for control with star simplicity for bulk data.
 }
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.9\linewidth]{../docs/figures/High-Level-Architecture.png}
+\caption{High-level architecture of the hybrid LoRa + Wi-Fi mesh. LoRa 2.4\,GHz forms the control-plane mesh (beacons, AODV routing, Bully election, harvest coordination). Wi-Fi forms the data-plane star via the gateway's persistent access point, with leaves connecting as STA clients for CoAP Block-Wise image transfer. Out-of-range leaves are serviced by a relay node performing sequential store-and-forward.}
+\label{fig:arch}
+\end{figure}
 
 \subsection{Hardware and Devices}
 
