@@ -56,11 +56,13 @@ All LoRa packets share a 3-byte header:
 | 0x31 | SUPPRESS      | 0x01    |
 | 0x32 | COORDINATOR   | 0x01    |
 | 0x33 | GW_RECLAIM    | 0x01    |
-| 0x34 | RELAY_ASSIGN  | 0x02    |
-| 0x40 | WAKE_PING     | 0x01    |
-| 0x41 | WAKE_BEACON_REQ | 0x01  |
+| 0x34 | RELAY_ASSIGN  | 0x01    |
+| 0x40 | WAKE_PING     | 0x01    | *(deprecated)* |
+| 0x41 | WAKE_BEACON_REQ | 0x01  | *(deprecated)* |
 
 > `RELAY_ASSIGN` (0x34) added by Feature 25 (2026-04-04): RSSI-based relay assignment. See `include/ElectionPacket.h` for the 15-byte `RelayAssignPacket` layout (magic + version + type + gatewayId + relayId).
+
+> **Deprecated**: `WAKE_PING` (0x40) and `WAKE_BEACON_REQ` (0x41) are defined in code but removed from active dispatch (commit 8665061). The SX1280 LoRa wake from deep sleep proved unreliable; timer-based wake (180s) is now the only wake mechanism. These constants are retained for backward compatibility with older firmware versions.
 
 ### Node Role Values
 

@@ -365,7 +365,7 @@ void CoapServer::_handleWellKnownCore(CoapMessage& req,
     char links[256];
     int len = snprintf(links, sizeof(links),
         "</info>;rt=\"core.info\";ct=50,"
-        "</image>;rt=\"core.image\";ct=42;sz=512,"
+        "</image>;rt=\"core.image\";ct=42;sz=1024,"
         "</checksum>;rt=\"core.checksum\";ct=50");
 
     resp.payload       = (uint8_t*)links;
